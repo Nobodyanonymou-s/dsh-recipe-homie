@@ -16,6 +16,7 @@ import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync } from "no
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { enrichRecipe } from "./enrich.mjs";
+import { consumedGramsOf } from "./parse.mjs";
 import { lookup, parseAmount } from "./ingredients.mjs";
 import { splitIngredient, deriveTags } from "./parse.mjs";
 
@@ -118,6 +119,28 @@ function normalizeIngredient(ing) {
     count: ing.count ?? p?.count ?? null,
     qualifier: ing.qualifier ?? p?.qualifier ?? null,
   };
+}
+
+// 南北/大众册摄入早于 W6 约耗字段化（省册在 parse 层做），这里补上：油脂行括号里的
+// 「约耗X」→ consumedGrams。只动 parent=油脂 且尚无值的行——enrich 的 oilConsumedDeltaOf
+// 只对这类行生效；非油料约耗（酱油/面粉等 46 条）仍按 0.5.1 债务推迟。
+let oilConsumedPatched = 0;
+function patchOilConsumed(ing) {
+  if (ing.parent !== "油脂" || ing.consumedGrams != null) return ing;
+  const g = consumedGramsOf(ing.raw ?? "");
+  if (!g) return ing;
+  oilConsumedPatched++;
+  return { ...ing, consumedGrams: g };
+}
+
+// 南北册摄入时页码没接：pages 是 "29.md" 形态的文件名，page 全空。取首个文件名的数字
+// 当起始页（与省册口径一致：page = 起始页）。
+function firstPageOf(pages) {
+  for (const p of pages ?? []) {
+    const n = parseInt(String(p).replace(/\D/g, ""), 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return null;
 }
 
 const records = base.map((r) => {
@@ -243,7 +266,12 @@ const withNew = [...recordsFinal];
 for (const r of nanbei) {
   const id = r.id ?? `南北-${String(withNew.length + 1).padStart(3, "0")}`;
   if (withNew.some((x) => x.id === id)) { report.warnings.push(`南北记录 id 冲突：${id}`); continue; }
-  withNew.push({ ...r, id, ingredients: (r.ingredients ?? []).map(normalizeIngredient) });
+  withNew.push({
+    ...r,
+    id,
+    page: r.page ?? firstPageOf(r.pages),
+    ingredients: (r.ingredients ?? []).map(normalizeIngredient).map(patchOilConsumed),
+  });
 }
 
 // ---- 3b. 大众菜谱（第 11 来源，0.5 语料批次 2026-10） ----
@@ -345,7 +373,7 @@ for (const r of dazhong) {
     pages: r.pages ?? [],
     page: r.page ?? null,
     chapterRaw: r.chapterRaw ?? r.chapter ?? null,
-    ingredients: (r.ingredients ?? []).map(normalizeDazhongIng),
+    ingredients: (r.ingredients ?? []).map(normalizeDazhongIng).map(patchOilConsumed),
     steps: r.steps ?? [],
     // 大众册的附注在上游是 {text, kind}，其余册是纯字符串；cards/recipe_get 的 schema
     // 只收 string[]，这里统一摊平成文本（kind 不参与展示），否则取详情会在宿主侧
@@ -542,6 +570,8 @@ const stats = {
   caloriesMedian: median(final.map((r) => r.perServing?.kcal ?? 0)),
 };
 report.stats = stats;
+report.applied.oilConsumed = oilConsumedPatched;
+report.applied.nanbeiPage = withNew.filter((r) => r.cuisine === "南北" && r.page != null).length;
 report.mb = +(readFileSync(join(DATA, "recipes.processed.jsonl")).length / 1e6).toFixed(2);
 
 writeFileSync(join(DATA, "processed-report.json"), JSON.stringify(report, null, 2), "utf8");

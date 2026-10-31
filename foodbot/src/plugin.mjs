@@ -163,7 +163,8 @@ function summaryLine(h, i) {
 }
 
 /** recipe_get 的 found 分支：与 0.1.2 的 recipeText 逐字一致（含页码、克数原文）。
- *  0.4.1 裁决 10（E2 S4）：page 缺失不再沉默——如实标注「整理版无页码」（南北册 706 条全缺）。 */
+ *  0.4.1 裁决 10（E2 S4）：page 缺失不再沉默——如实标注「整理版无页码」
+ *  （2026-10-31 起南北册 706 条页码已从 pages 文件名接入，此标注只剩省册少数真缺页）。 */
 function recipeTextFromValue(r) {
   const head = `《${r.book}》${r.page ? ` p.${r.page}` : "（整理版无页码）"}${r.seq ? ` · 第${r.seq}条` : ""}${r.recoveredTitle ? "（菜名由目录补全）" : ""}`;
   const ing = r.ingredients

@@ -219,9 +219,13 @@ const mkSynth = (withLikes) => ({
 });
 const porkMains = (p) => p.plan.flatMap((d) => d.meals.flatMap((m) => m.dishes)).filter((d) => d.role === "protein" && (book.get(d.id).ingredients ?? []).some((i) => i.parent === "猪肉")).length;
 const likePlan = new Planner(book, mkSynth(true), presets).plan({ days: 3, meals: 2, people: 1, seed: 42 });
-const noLikePlan = new Planner(book, mkSynth(false), presets).plan({ days: 3, meals: 2, people: 1, seed: 42 });
 check("A6 likes 猪肉+fat_loss：3 天 >=1 道猪肉主菜", porkMains(likePlan) >= 1, `${porkMains(likePlan)} 道`);
-check("A6 无 likes 对照的猪肉主菜 <= 有 likes", porkMains(noLikePlan) <= porkMains(likePlan), `${porkMains(noLikePlan)} vs ${porkMains(likePlan)}`);
+// A/B 对照从单 seed 改 4-seed 合计（2026-10-31）：单 seed 下池子一变（如约耗热量修正）计数就可能翻转，
+// 断言脆而不说明语义坏；多 seed 合计下 likes 的加分效应稳定显形。
+const porkMainsAcrossSeeds = (withLikes) =>
+  [42, 7, 123, 2026].reduce((s, sd) => s + porkMains(new Planner(book, mkSynth(withLikes), presets).plan({ days: 3, meals: 2, people: 1, seed: sd })), 0);
+check("A6 无 likes 对照的猪肉主菜 <= 有 likes（4 seed 合计）",
+  porkMainsAcrossSeeds(false) <= porkMainsAcrossSeeds(true), `${porkMainsAcrossSeeds(false)} vs ${porkMainsAcrossSeeds(true)}`);
 
 // A7：lowFat 高脂降权（主料级口径与 profile.highFatMainLevel 同源——吊汤 25g 肥膘是配料级，R2b 思路）
 const highFatMain = (r) => highFatMainLevel(r) === "main";
@@ -440,13 +444,14 @@ const renderTool = (tool, args, value) => tool.output.render(args, value).map((b
   check("B8 days=1 无「顺延一天」", !day1Text.includes("顺延一天"), day1Text.split("\n").find((l) => l.includes("顺延")) ?? "");
 }
 
-// B9：recipe_get 南北系菜（无页码）诚实标注
+// B9：recipe_get 无页码菜（诚实标注）。南北册页码 2026-10-31 已接（pages 文件名 → page），
+// 靶子改用省册里真无页码的记录——断言精神不变：页码缺失如实说，不沉默。
 {
-  const nanbei = book.recipes.find((r) => r.book === "中国南北名菜谱" && !r.page && !r.bulk && !r.suspectTitle);
-  const v = await realGet.execute({ id: nanbei.id });
-  const text = renderTool(realGet, { id: nanbei.id }, v);
-  check("B9 无页码分册显示「（整理版无页码）」", text.includes(`《${nanbei.book}》（整理版无页码）`),
-    `${nanbei.id} ${nanbei.title}：${text.split("\n")[1] ?? ""}`);
+  const noPage = book.recipes.find((r) => r.cuisine !== "南北" && r.cuisine !== "大众" && !r.page && !r.bulk && !r.suspectTitle);
+  const v = await realGet.execute({ id: noPage.id });
+  const text = renderTool(realGet, { id: noPage.id }, v);
+  check("B9 无页码分册显示「（整理版无页码）」", text.includes(`《${noPage.book}》（整理版无页码）`),
+    `${noPage.id} ${noPage.title}：${text.split("\n")[1] ?? ""}`);
 }
 
 // ───────── 0.4.2 新增（R2b 忌口两级语义 C1–C6）─────────
