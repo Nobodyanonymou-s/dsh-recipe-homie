@@ -20,7 +20,13 @@
 
 ## 安装
 
-**未上架插件市场，也未发布 npm**——本地打包安装：
+**未上架插件市场，也未发布 npm**——从 GitHub 直装（包在仓库的 `foodbot/` 子目录，用 `#path:` 指过去）：
+
+```sh
+dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-foodbot#path:foodbot"
+```
+
+离线/慢网备选：clone 后打 tarball 本地装：
 
 ```sh
 git clone https://github.com/Nobodyanonymou-s/dsh-foodbot.git

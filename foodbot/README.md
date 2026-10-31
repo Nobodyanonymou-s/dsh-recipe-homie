@@ -165,6 +165,7 @@ profile.json                   用户画像：长期偏好 + 有窗口的周期�
 
 - **内容从会话日志派生**：每次渲染都扫本会话 `tool/result` 上的 `presentationMeta`，不另存副本——刷新、重开都在，也不会和对话里的卡对不上
 - 优先显示最近的板书（`show_card`），没有就退回「最后一次摇桌 + 最近 4 张菜卡」；空态显示「这桌还是空的」
+- **默认弹**：新的板书出现时自动打开页签；`callId` 存 localStorage，同一张卡只弹一次，翻历史/刷新不重复
 
 ## 本地跑
 
@@ -182,12 +183,13 @@ node tools/audit.mjs               # 数据审计
 
 ## 安装（包挂载，带浏览器卡片）
 
-路径挂载只有 Host 半边；要让浏览器也加载客户端卡片，必须装成包：
+路径挂载只有 Host 半边；要让浏览器也加载客户端卡片，必须装成包。GitHub 直装（包在仓库 `foodbot/` 子目录，`#path:` 指过去）：
 
 ```sh
-npm pack --pack-destination ./dist
-dsh plugin --profile desktop add ./dist/dsh-foodbot-<version>.tgz   # 或 pnpm add file: 装进 profile 并加入 dsh.profile.bundles
+dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-foodbot#path:foodbot"
 ```
+
+或本地 tarball：`npm pack --pack-destination ./dist` 后 `dsh plugin add ./dist/dsh-foodbot-<version>.tgz`。
 
 `cordis.patch.yml` 的 `config.dataDir` 指向你自己的语料目录（可写——画像与状态写在旁边）；改代码要重打包重装重启，重建数据什么都不用做（mtime 自动重载）。
 
