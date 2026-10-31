@@ -427,6 +427,7 @@ export const PURCHASE_UNITS = {
   鳝鱼: { minBuy: 400, note: "两条起" },
   蟹: { minBuy: 400, note: "两只" },
   黄花鱼肉: { minBuy: 300, note: "一条黄鱼出鱼段" },
+  净鲑鱼肉: { minBuy: 300, note: "一段鲑鱼切段，剩下煎了吃" },
   海参: { minBuy: 50, note: "干海参一小包，水发后约四五只" },
 
   // ───── 粮油/干货：按袋/按把 ─────

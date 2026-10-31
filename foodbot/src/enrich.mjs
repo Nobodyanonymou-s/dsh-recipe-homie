@@ -101,7 +101,15 @@ export function enrichRecipe(recipe) {
     const grams = i.grams ?? 0;
     // W7a：营养累计按可食部折算；grams 本身（配料原文克数）与采购口径不动
     const pct = ediblePctOf(i.canon);
-    const effGrams = pct === 100 ? grams : (grams * pct) / 100;
+    let effGrams = pct === 100 ? grams : (grams * pct) / 100;
+    // 非油料「约耗」（2026-10-31 收尾，原 0.5.1 债）：介质类（腌渍取出/滚沾/炸介质——酱油、
+    // 糯米粉、芝麻、白油）营养按实耗计，剩的进了下水道；主料固体（炸制缩水）按全量减损耗。
+    // 油脂行不在这里动——沿用 W6 的 oilConsumedDelta 差额口径，保证老值逐位不变。
+    if (i.parent !== "油脂" && Number.isFinite(i.consumedGrams) && i.consumedGrams > 0) {
+      const solidMain = ["猪肉", "牛肉", "羊肉", "禽肉", "水产", "蛋", "豆制品"].includes(i.parent);
+      const base = solidMain ? Math.max(0, grams - i.consumedGrams) : i.consumedGrams;
+      effGrams = pct === 100 ? base : (base * pct) / 100;
+    }
     const n = nutrition({ id: i.canon, parent: i.parent }, effGrams);
     protein += n.protein;
     fat += n.fat;

@@ -121,12 +121,14 @@ function normalizeIngredient(ing) {
   };
 }
 
-// 南北/大众册摄入早于 W6 约耗字段化（省册在 parse 层做），这里补上：油脂行括号里的
-// 「约耗X」→ consumedGrams。只动 parent=油脂 且尚无值的行——enrich 的 oilConsumedDeltaOf
-// 只对这类行生效；非油料约耗（酱油/面粉等 46 条）仍按 0.5.1 债务推迟。
+// 约耗字段化补全（原 W6 只覆盖省册 parse 层 + 油脂行）：任何册、任何 parent 的行，括号里带
+// 「约耗X/实耗X/（耗X）」而尚无 consumedGrams 的都补上。语义分两层由 enrich 裁决：
+//   介质类（油脂/调味/谷物裹粉/坚果沾裹，腌后取出、滚沾、炸介质）→ 营养按 consumed 计
+//   主料固体（猪牛羊禽水产蛋豆，炸制缩水）→ 营养按 grams − consumed 计
 let oilConsumedPatched = 0;
 function patchOilConsumed(ing) {
-  if (ing.parent !== "油脂" || ing.consumedGrams != null) return ing;
+  if (ing.consumedGrams != null) return ing;
+  if (!/耗/.test(String(ing.raw ?? ""))) return ing;
   const g = consumedGramsOf(ing.raw ?? "");
   if (!g) return ing;
   oilConsumedPatched++;
@@ -145,7 +147,7 @@ function firstPageOf(pages) {
 
 const records = base.map((r) => {
   const out = structuredClone(r);
-  out.ingredients = (out.ingredients ?? []).map(normalizeIngredient);
+  out.ingredients = (out.ingredients ?? []).map(normalizeIngredient).map(patchOilConsumed);
 
   // 2a. 词表：把 guessed 的原料改成建议的标准名
   out.ingredients = (out.ingredients ?? []).map((ing) => {

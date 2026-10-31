@@ -62,7 +62,6 @@ const KCAL_ZERO_ALLOW = new Set([
   "国际-005", "国际-269", "国际-272", "国际-273", "国际-274", "国际-293", "国际-374", "国际-383",
   "国际-483", "国际-529", "国际-960", "国际-1043", "国际-1044", "国际-1045", "国际-1046",
   "国际-1139", "国际-1176", "国际-1237",
-  "国际-1251", // 三色米团：OCR 把「江米饭3斤（1252~1）豆沙馅」两味粘成一段，行级重切是 0.5.1 候补
 ]);
 
 // 已知形态回归表（ITERATION-0.5 W1 新增，门禁盲区补丁）：
@@ -147,7 +146,13 @@ for (const r of L) {
     if (!i.canon) continue;
     const grams = i.grams ?? 0;
     const pct = ediblePctOf(i.canon);
-    const v = nutrition({ id: i.canon, parent: i.parent }, pct === 100 ? grams : (grams * pct) / 100);
+    // 非油料「约耗」净口径（2026-10-31，与 enrich 同源）：介质类按实耗、主料固体按全量减损耗
+    let baseG = grams;
+    if (i.parent !== "油脂" && Number.isFinite(i.consumedGrams) && i.consumedGrams > 0) {
+      const solidMain = ["猪肉", "牛肉", "羊肉", "禽肉", "水产", "蛋", "豆制品"].includes(i.parent);
+      baseG = solidMain ? Math.max(0, grams - i.consumedGrams) : i.consumedGrams;
+    }
+    const v = nutrition({ id: i.canon, parent: i.parent }, pct === 100 ? baseG : (baseG * pct) / 100);
     const wet = isWetStarch(i);
     p += v.protein;
     f += v.fat;
