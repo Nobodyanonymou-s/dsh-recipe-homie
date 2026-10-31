@@ -9,7 +9,7 @@
 **菜谱是原材料，不是产品。** 仓库不含完整菜谱数据——数据派生自编者藏书 OCR，不分发。仓库带的是：
 
 - 处理管线：`src/parse.mjs`（OCR Markdown → 菜谱记录）→ `src/lexicon.mjs` + `src/ingredients.mjs`（原料归一、斤两→克）→ `src/enrich.mjs`（营养/难度/份量）→ `src/integrate.mjs`（合成 `data/recipes.processed.jsonl`）
-- 示例语料：`foodbot/data-sample/`（各品类抽样，克隆即用）；完整库自备书源跑 `build → integrate`
+- 示例语料：`recipe-homie/data-sample/`（各品类抽样，克隆即用）；完整库自备书源跑 `build → integrate`
 
 插件和查询层按 mtime 自动读最新的数据文件，重建库不必重启宿主。
 
@@ -183,10 +183,10 @@ node tools/audit.mjs               # 数据审计
 
 ## 安装（包挂载，带浏览器卡片）
 
-路径挂载只有 Host 半边；要让浏览器也加载客户端卡片，必须装成包。GitHub 直装（包在仓库 `foodbot/` 子目录，`#path:` 指过去）：
+路径挂载只有 Host 半边；要让浏览器也加载客户端卡片，必须装成包。GitHub 直装（包在仓库 `recipe-homie/` 子目录，`#path:` 指过去）：
 
 ```sh
-dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-recipe-homie#path:foodbot"
+dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-recipe-homie#path:recipe-homie"
 ```
 
 或本地 tarball：`npm pack --pack-destination ./dist` 后 `dsh plugin add ./dist/dsh-recipe-homie-<version>.tgz`。

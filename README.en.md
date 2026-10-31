@@ -20,25 +20,25 @@ Turns a shelf of classic Chinese cookbooks into a structured recipe library with
 
 ## Install
 
-**Not on the plugin marketplace, not on npm** — install straight from GitHub (the package lives in the `foodbot/` subdirectory, so point `#path:` at it):
+**Not on the plugin marketplace, not on npm** — install straight from GitHub (the package lives in the `recipe-homie/` subdirectory, so point `#path:` at it):
 
 ```sh
-dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-recipe-homie#path:foodbot"
+dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-recipe-homie#path:recipe-homie"
 ```
 
 Offline / slow-network fallback — clone and pack a tarball locally:
 
 ```sh
 git clone https://github.com/Nobodyanonymou-s/dsh-recipe-homie.git
-cd dsh-recipe-homie/foodbot
+cd dsh-recipe-homie/recipe-homie
 npm pack --pack-destination ./dist
 dsh plugin --profile desktop add ./dist/dsh-recipe-homie-<version>.tgz
 ```
 
 After installing, point it at a data directory — pick one:
 
-- **Try it now**: copy [data-sample](./foodbot/data-sample/) (a sampled corpus, 160 dishes across every category) to a writable location — the plugin writes profile and state files there — and set `dataDir` in the mount config (`cordis.patch.yml` `config:` block) to it
-- **Full library**: the repo ships no complete recipe data (derived from the owner's book collection, not distributed) — bring your own book sources, run `build → integrate` to produce `data/`, point `dataDir` there, and copy [presets.example.json](./foodbot/presets.example.json) to `data/presets.json`; see the [tech doc](./foodbot/README.md)
+- **Try it now**: copy [data-sample](./recipe-homie/data-sample/) (a sampled corpus, 160 dishes across every category) to a writable location — the plugin writes profile and state files there — and set `dataDir` in the mount config (`cordis.patch.yml` `config:` block) to it
+- **Full library**: the repo ships no complete recipe data (derived from the owner's book collection, not distributed) — bring your own book sources, run `build → integrate` to produce `data/`, point `dataDir` there, and copy [presets.example.json](./recipe-homie/presets.example.json) to `data/presets.json`; see the [tech doc](./recipe-homie/README.md)
 
 Then restart DSH.
 
@@ -47,7 +47,7 @@ First run: tell it your tastes and restrictions (or copy an [example profile](./
 ## Docs
 
 - [Example profiles](./画像示例.md) (Chinese) — three complete profiles + "how the design takes care of each", edit and use
-- [Tech doc](./foodbot/README.md) — data pipeline, nutrition methodology, tool contracts, known limits
+- [Tech doc](./recipe-homie/README.md) — data pipeline, nutrition methodology, tool contracts, known limits
 
 ## Design principles
 

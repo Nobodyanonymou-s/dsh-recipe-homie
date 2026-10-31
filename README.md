@@ -20,25 +20,25 @@
 
 ## 安装
 
-**未上架插件市场，也未发布 npm**——从 GitHub 直装（包在仓库的 `foodbot/` 子目录，用 `#path:` 指过去）：
+**未上架插件市场，也未发布 npm**——从 GitHub 直装（包在仓库的 `recipe-homie/` 子目录，用 `#path:` 指过去）：
 
 ```sh
-dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-recipe-homie#path:foodbot"
+dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-recipe-homie#path:recipe-homie"
 ```
 
 离线/慢网备选：clone 后打 tarball 本地装：
 
 ```sh
 git clone https://github.com/Nobodyanonymou-s/dsh-recipe-homie.git
-cd dsh-recipe-homie/foodbot
+cd dsh-recipe-homie/recipe-homie
 npm pack --pack-destination ./dist
 dsh plugin --profile desktop add ./dist/dsh-recipe-homie-<version>.tgz
 ```
 
 装包后配一下数据目录，二选一：
 
-- **开箱试用**：把 [data-sample](./foodbot/data-sample/)（各品类抽样的示例语料，160 道）复制到一个可写目录——插件会往里面写画像与状态——再把挂载配置（`cordis.patch.yml` 的 `config:`）里 `dataDir` 指过去
-- **完整库**：仓库不含完整菜谱数据（派生自编者藏书，不分发）——自备书源跑 `build → integrate` 产出 `data/`，`dataDir` 指过去，并把 [presets.example.json](./foodbot/presets.example.json) 复制为 `data/presets.json`；细节见[技术文档](./foodbot/README.md)
+- **开箱试用**：把 [data-sample](./recipe-homie/data-sample/)（各品类抽样的示例语料，160 道）复制到一个可写目录——插件会往里面写画像与状态——再把挂载配置（`cordis.patch.yml` 的 `config:`）里 `dataDir` 指过去
+- **完整库**：仓库不含完整菜谱数据（派生自编者藏书，不分发）——自备书源跑 `build → integrate` 产出 `data/`，`dataDir` 指过去，并把 [presets.example.json](./recipe-homie/presets.example.json) 复制为 `data/presets.json`；细节见[技术文档](./recipe-homie/README.md)
 
 然后重启 DSH。
 
@@ -47,7 +47,7 @@ dsh plugin --profile desktop add ./dist/dsh-recipe-homie-<version>.tgz
 ## 文档
 
 - [画像示例](./画像示例.md)——三个完整画像与"它会怎么照顾你"，改一改就能用
-- [技术文档](./foodbot/README.md)——数据流水线、营养口径、工具契约、已知边界
+- [技术文档](./recipe-homie/README.md)——数据流水线、营养口径、工具契约、已知边界
 
 ## 设计原则
 
