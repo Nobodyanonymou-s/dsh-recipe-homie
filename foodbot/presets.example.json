@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "note": "周期性饮食场景模板。periods 里引用 preset，planner 会把 goals 转成筛选条件。",
+  "presets": {
+    "fitness": {
+      "label": "健身增肌",
+      "goals": { "proteinPerServing": 30, "kcalPerServing": null, "lowFat": false, "lowSalt": false, "lowCarb": false },
+      "preferMethods": ["蒸", "煮", "烤", "炒", "煎", "焖", "焗"],
+      "avoidMethods": ["炸", "拔丝"],
+      "preferParents": ["禽肉", "水产", "牛肉", "蛋", "豆制品"],
+      "note": "每餐主菜尽量 30g 以上蛋白，优先蒸煮烤炒；炸物留到休息日"
+    },
+    "fat_loss": {
+      "label": "减脂",
+      "goals": { "proteinPerServing": 28, "kcalPerServing": 450, "lowFat": true, "lowSalt": false, "lowCarb": false },
+      "preferMethods": ["蒸", "煮", "拌", "烤", "汆"],
+      "avoidMethods": ["炸", "拔丝", "糖醋", "焗"],
+      "preferParents": ["水产", "禽肉", "蔬菜", "豆制品"],
+      "note": "控制总热量和用油，多纤维；主食另配、不写进菜里"
+    },
+    "pregnancy": {
+      "label": "孕期",
+      "goals": { "proteinPerServing": 25, "kcalPerServing": null, "lowFat": false, "lowSalt": false, "lowCarb": false },
+      "avoidAllergens": [],
+      "avoidCanon": ["硝水", "白酒", "绍酒", "香糟", "酒酿"],
+      "avoidMethods": ["醉", "糟", "生", "熏", "烤鸭"],
+      "avoidRaw": true,
+      "note": "避开腌制硝水、酒糟类与生食；鱼类选低汞的（鲫鱼、鲈鱼、鳊鱼、桂鱼），避开鲨鱼、旗鱼、方头鱼、大型金枪鱼"
+    },
+    "low_salt": {
+      "label": "低盐",
+      "goals": { "proteinPerServing": 25, "kcalPerServing": null, "lowFat": false, "lowSalt": true, "lowCarb": false },
+      "avoidMethods": ["腌", "腊", "熏", "糟"],
+      "avoidCanon": ["花椒盐", "豆瓣酱", "豆酱", "腐乳", "鱼露", "辣酱油"],
+      "note": "盐目标 ≤3g/人/餐；腌腊类先不放"
+    },
+    "low_fat": {
+      "label": "低脂",
+      "goals": { "proteinPerServing": 25, "kcalPerServing": null, "lowFat": true, "lowSalt": false, "lowCarb": false },
+      "avoidMethods": ["炸", "拔丝", "焗"],
+      "preferMethods": ["蒸", "煮", "拌", "氽", "涮"],
+      "note": "少油；肥膘、板油这类配料出现时自动减半或不放"
+    },
+    "kids": {
+      "label": "有小孩",
+      "goals": { "proteinPerServing": 20, "kcalPerServing": null, "lowFat": false, "lowSalt": true, "lowCarb": false },
+      "avoidCanon": ["干辣椒", "辣椒", "花椒", "芥末", "白酒", "硝水"],
+      "avoidMethods": ["炸", "熏", "醉", "糟"],
+      "note": "不辣、少盐、去骨；口味以咸鲜、酸甜为主"
+    },
+    "vegetarian": {
+      "label": "素食",
+      "goals": { "proteinPerServing": 20, "kcalPerServing": null, "lowFat": false, "lowSalt": false, "lowCarb": false },
+      "blockParents": ["猪肉", "牛肉", "羊肉", "禽肉", "水产"],
+      "preferParents": ["豆制品", "菌菇", "蔬菜", "蛋"],
+      "note": "靠豆制品、菌菇、蛋补蛋白"
+    }
+  }
+}

@@ -1,0 +1,455 @@
+﻿/**
+ * 原料本体：把 2,753 个 OCR 出来的叫法收敛成可检索、可采购、可做忌口判断的标准名。
+ *
+ * 每条：
+ *   id        标准名（也是采购清单上印的字）
+ *   parent    上位类，用来理解「喜欢猪肉」这种粗粒度偏好
+ *   cat       采购分区（肉禽/水产/蛋奶/蔬菜/菌菇/豆制品/粮油/干货/调味/水果/坚果/其他）
+ *   allergen  过敏原标签，硬约束用
+ *   unit      g = 按重量买；count = 按只/条/个买
+ *   unitGrams 一只/一条大约多少克，用来把「鸡蛋 二只」折算进蛋白质和采购量
+ *   aliases   OCR 里出现过或常见的异名
+ */
+export const BASE = [
+  // ───────── 调味 ─────────
+  { id: "盐", parent: "调味", cat: "调味", unit: "g", aliases: ["精盐", "粗盐", "食盐", "细盐", "盐末"] },
+  { id: "酱油", parent: "调味", cat: "调味", unit: "g", aliases: ["白酱油", "红酱油", "深色酱油", "浅色酱油", "生抽", "老抽", "好酱油", "一级酱油"] },
+  { id: "白糖", parent: "调味", cat: "调味", unit: "g", aliases: ["绵白糖", "白砂糖", "砂糖", "白糖粉", "糖"] },
+  { id: "红糖", parent: "调味", cat: "调味", unit: "g", aliases: ["黄糖", "黄糖粉", "赤砂糖"] },
+  { id: "冰糖", parent: "调味", cat: "调味", unit: "g", aliases: ["冰糖屑", "冰糖末", "冰 糖"] },
+  { id: "饴糖", parent: "调味", cat: "调味", unit: "g", aliases: ["麦芽糖", "糖稀"] },
+  { id: "蜂蜜", parent: "调味", cat: "调味", unit: "g", aliases: ["蜜糖"] },
+  { id: "醋", parent: "调味", cat: "调味", unit: "g", aliases: ["米醋", "香醋", "白醋", "黄醋", "漆醋", "陈醋", "好醋"] },
+  { id: "绍酒", parent: "调味", cat: "调味", unit: "g", aliases: ["黄酒", "料酒", "花雕", "加饭酒", "绍 酒", "料酒（绍酒）"] },
+  { id: "白酒", parent: "调味", cat: "调味", unit: "g", aliases: ["汾酒", "高粱酒", "曲酒", "烧酒"] },
+  { id: "香糟", parent: "调味", cat: "调味", unit: "g", aliases: ["酒糟", "糟卤", "香糟卤"] },
+  { id: "酒酿", parent: "调味", cat: "调味", unit: "g", aliases: ["醪糟", "酒酿汁", "甜米酒"] },
+  { id: "味精", parent: "调味", cat: "调味", unit: "g", aliases: ["味素", "味 精"] },
+  { id: "胡椒", parent: "调味", cat: "调味", unit: "g", aliases: ["胡椒粉", "白胡椒", "黑胡椒", "白胡椒粉", "黑胡椒粉", "胡椒面", "白胡椒面", "胡椒粒", "胡椒末"] },
+  { id: "花椒", parent: "调味", cat: "调味", unit: "g", aliases: ["花椒粉", "花椒末", "花椒子", "花椒面", "川椒", "花 椒"] },
+  { id: "花椒盐", parent: "调味", cat: "调味", unit: "g", aliases: ["椒盐"] },
+  { id: "八角", parent: "调味", cat: "调味", unit: "g", aliases: ["大料", "八角末", "八角粉", "八角子"] },
+  { id: "桂皮", parent: "调味", cat: "调味", unit: "g", aliases: ["肉桂", "桂皮末", "桂皮粉"] },
+  { id: "小茴香", parent: "调味", cat: "调味", unit: "g", aliases: ["茴香", "小茴", "茴香末"] },
+  { id: "丁香", parent: "调味", cat: "调味", unit: "g", aliases: ["丁香末"] },
+  { id: "陈皮", parent: "调味", cat: "调味", unit: "g", aliases: ["橘皮", "桔皮"] },
+  { id: "草果", parent: "调味", cat: "调味", unit: "g", aliases: [] },
+  { id: "五香粉", parent: "调味", cat: "调味", unit: "g", aliases: ["五香", "五香面"] },
+  { id: "咖喱粉", parent: "调味", cat: "调味", unit: "g", aliases: ["咖喱", "油咖喱"] },
+  { id: "辣椒粉", parent: "调味", cat: "调味", unit: "g", aliases: ["辣椒面", "辣椒末"] },
+  { id: "干辣椒", parent: "调味", cat: "调味", unit: "g", aliases: ["干红辣椒", "辣椒干", "红干椒"] },
+  { id: "辣椒油", parent: "调味", cat: "调味", unit: "g", aliases: ["红油", "辣油"] },
+  { id: "豆瓣酱", parent: "调味", cat: "调味", unit: "g", aliases: ["豆瓣", "郫县豆瓣", "豆瓣儿酱", "豆瓣辣酱"] },
+  { id: "甜面酱", parent: "调味", cat: "调味", unit: "g", aliases: ["甜酱", "面酱"] },
+  { id: "豆酱", parent: "调味", cat: "调味", unit: "g", aliases: ["黄酱", "大酱", "豆板酱"] },
+  { id: "芝麻酱", parent: "调味", cat: "调味", unit: "g", aliases: ["麻酱"] },
+  { id: "花生酱", parent: "调味", cat: "调味", unit: "g", aliases: [] },
+  { id: "番茄酱", parent: "调味", cat: "调味", unit: "g", aliases: ["蕃茄酱", "番茄沙司", "西红柿酱"] },
+  { id: "蚝油", parent: "调味", cat: "调味", unit: "g", aliases: [] },
+  { id: "辣酱油", parent: "调味", cat: "调味", unit: "g", aliases: ["喼汁", "辣醋"] },
+  { id: "腐乳", parent: "调味", cat: "调味", unit: "g", aliases: ["红腐乳", "南乳", "腐乳卤"] },
+  { id: "豆豉", parent: "调味", cat: "调味", unit: "g", aliases: ["豆豉泥", "阳江豆豉"] },
+  { id: "芥末", parent: "调味", cat: "调味", unit: "g", aliases: ["芥末粉", "芥末酱", "芥末糊"] },
+  { id: "淀粉", parent: "调味", cat: "调味", unit: "g", aliases: ["湿淀粉", "干淀粉", "生粉", "豆粉", "团粉"] },
+  { id: "百合粉", parent: "调味", cat: "调味", unit: "g", aliases: ["百合淀粉"] },
+  { id: "面粉", parent: "谷物", cat: "粮油", unit: "g", aliases: ["白面粉", "上白面粉", "精白面粉", "白面", "面 粉"] },
+  { id: "糯米粉", parent: "谷物", cat: "粮油", unit: "g", aliases: ["汤团粉", "江米粉"] },
+  { id: "大米粉", parent: "谷物", cat: "粮油", unit: "g", aliases: ["粘米粉", "籼米粉", "粳米粉"] },
+  { id: "发酵粉", parent: "调味", cat: "调味", unit: "g", aliases: ["泡打粉", "发粉"] },
+  { id: "碱", parent: "调味", cat: "调味", unit: "g", aliases: ["食碱", "口碱", "碱水", "纯碱"] },
+  { id: "硝水", parent: "调味", cat: "调味", unit: "g", aliases: ["硝", "亚硝酸钠"], note: "腌制用，孕期与儿童不建议" },
+  { id: "红曲粉", parent: "调味", cat: "调味", unit: "g", aliases: ["红曲", "红曲米", "红曲水"] },
+
+  // ───────── 油脂 ─────────
+  { id: "猪油", parent: "油脂", cat: "粮油", unit: "g", aliases: ["熟猪油", "生猪油", "大油", "猪 油", "猪油丁"] },
+  { id: "鸡油", parent: "油脂", cat: "粮油", unit: "g", aliases: [] },
+  { id: "鸭油", parent: "油脂", cat: "粮油", unit: "g", aliases: [] },
+  { id: "花生油", parent: "油脂", cat: "粮油", unit: "g", aliases: ["生油"] },
+  { id: "菜籽油", parent: "油脂", cat: "粮油", unit: "g", aliases: ["菜油"] },
+  { id: "豆油", parent: "油脂", cat: "粮油", unit: "g", aliases: [] },
+  { id: "茶油", parent: "油脂", cat: "粮油", unit: "g", aliases: ["茶籽油"] },
+  { id: "植物油", parent: "油脂", cat: "粮油", unit: "g", aliases: ["素油", "清油", "色拉油"] },
+  { id: "芝麻油", parent: "油脂", cat: "粮油", unit: "g", aliases: ["香油", "麻油", "小磨香油"] },
+  { id: "葱油", parent: "油脂", cat: "粮油", unit: "g", aliases: [] },
+
+  // ───────── 猪肉 ─────────
+  { id: "五花肉", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪五花肉", "肋条肉", "猪肋条肉", "方肉", "五花", "肥瘦肉", "猪肥瘦肉"] },
+  { id: "猪瘦肉", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["瘦猪肉", "猪瘦肉丝", "猪瘦肉片", "瘦猪肉丝"] },
+  { id: "里脊", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪里脊", "猪里脊肉", "里脊肉", "猪柳"] },
+  { id: "肥膘", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪肥膘", "肥膘肉", "猪肥膘肉", "肥猪肉", "猪肥肉", "肥肉"] },
+  { id: "板油", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪板油", "猪板油丁"] },
+  { id: "网油", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪网油"] },
+  { id: "猪蹄膀", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["蹄膀", "猪肘", "肘子", "猪肘子", "猪后蹄膀", "猪前蹄膀"] },
+  { id: "猪蹄", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪脚", "猪爪", "猪手"] },
+  { id: "排骨", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪排骨", "小排", "大排", "肋排", "猪肉排"] },
+  { id: "猪骨", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪骨", "猪大骨", "杂骨", "骨头", "猪骨头"] },
+  { id: "猪肚", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪肚子", "肚尖", "猪肚头"] },
+  { id: "猪肝", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪肝片", "猪肝丝"] },
+  { id: "猪腰", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪腰子", "腰子", "猪腰片"] },
+  { id: "猪肠", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪大肠", "肥肠", "大肠", "猪直肠", "肠头"] },
+  { id: "猪心", parent: "猪肉", cat: "肉禽", unit: "g", aliases: [] },
+  { id: "猪舌", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["口条", "猪口条"] },
+  { id: "猪皮", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["肉皮", "猪肉皮", "猪皮丝"] },
+  { id: "猪脑", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["脑花"] },
+  { id: "猪血", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["血豆腐", "猪血旺"] },
+  { id: "肉末", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪肉末", "肉馅", "猪肉馅", "绞肉", "肉糜"] },
+  { id: "火腿", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["瘦火腿", "火腿片", "火腿末", "火腿丝", "火腿丁", "火腿肉", "瘦火腿肉", "金华火腿", "火腿粒"] },
+  { id: "腊肉", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["咸肉", "家乡肉", "腊条肉"] },
+  { id: "香肠", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["腊肠", "广式香肠"] },
+  { id: "叉烧", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["叉烧肉"] },
+  { id: "蹄筋", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪蹄筋", "牛蹄筋"] },
+
+  // ───────── 牛羊 ─────────
+  { id: "牛肉", parent: "牛肉", cat: "肉禽", unit: "g", aliases: ["牛里脊", "牛里脊肉", "牛柳", "牛肉丝", "牛肉片", "牛腩", "牛腱"] },
+  { id: "羊肉", parent: "羊肉", cat: "肉禽", unit: "g", aliases: ["羊里脊", "羊腿肉", "羊肉片", "羊肉丝", "羊腩"] },
+
+  // ───────── 禽 ─────────
+  { id: "鸡肉", parent: "禽肉", cat: "肉禽", unit: "g", aliases: ["鸡", "鸡肉丁", "鸡肉片", "鸡肉丝", "鸡肉粒", "去骨鸡肉", "去骨嫩鸡肉", "鸡块", "鸡条"] },
+  { id: "光鸡", parent: "禽肉", cat: "肉禽", unit: "count", unitGrams: 1250, aliases: ["光仔鸡", "仔鸡", "母鸡", "肥嫩鸡项", "鸡项", "嫩鸡", "童子鸡", "光母鸡", "鸡一只", "去毛嫩母鸡", "净母鸡", "子鸡", "鸡项仔", "母鸡项"] },
+  { id: "鸡胸", parent: "禽肉", cat: "肉禽", unit: "g", aliases: ["鸡脯肉", "鸡脯", "鸡胸肉", "鸡柳", "鸡脯肉丝"] },
+  { id: "鸡腿", parent: "禽肉", cat: "肉禽", unit: "count", unitGrams: 250, aliases: ["鸡腿肉", "鸡大腿"] },
+  { id: "鸡翅", parent: "禽肉", cat: "肉禽", unit: "count", unitGrams: 60, aliases: ["鸡翅膀", "鸡翼"] },
+  { id: "鸡爪", parent: "禽肉", cat: "肉禽", unit: "count", unitGrams: 30, aliases: ["凤爪", "鸡脚"] },
+  { id: "鸡肝", parent: "禽肉", cat: "肉禽", unit: "g", aliases: [] },
+  { id: "鸡肫", parent: "禽肉", cat: "肉禽", unit: "g", aliases: ["鸡胗", "鸡肫肝"] },
+  { id: "鸡皮", parent: "禽肉", cat: "肉禽", unit: "g", aliases: ["鸡皮片"] },
+  { id: "鸡血", parent: "禽肉", cat: "肉禽", unit: "g", aliases: [] },
+  { id: "鸭", parent: "禽肉", cat: "肉禽", unit: "count", unitGrams: 1500, aliases: ["鸭肉", "光鸭", "填鸭", "子鸭", "嫩鸭", "鸭块", "去毛嫩母鸭", "肥鸭", "宰净肥鸭", "光肥鸭"] },
+  { id: "鸭肫", parent: "禽肉", cat: "肉禽", unit: "g", aliases: ["鸭胗", "鸭肫肝"] },
+  { id: "鸭掌", parent: "禽肉", cat: "肉禽", unit: "count", unitGrams: 30, aliases: ["鸭脚"] },
+  { id: "野鸭", parent: "禽肉", cat: "肉禽", unit: "count", unitGrams: 1000, aliases: ["野味鸭"] },
+  { id: "鸽", parent: "禽肉", cat: "肉禽", unit: "count", unitGrams: 400, aliases: ["乳鸽", "鸽子", "白鸽"] },
+  { id: "鹌鹑", parent: "禽肉", cat: "肉禽", unit: "count", unitGrams: 130, aliases: ["鹌鹑鸟"] },
+
+  // ───────── 蛋奶 ─────────
+  { id: "鸡蛋", parent: "蛋", cat: "蛋奶", unit: "count", unitGrams: 50, allergen: ["蛋类"], aliases: ["鸡子", "去壳鸡蛋", "鲜鸡蛋"] },
+  { id: "蛋清", parent: "蛋", cat: "蛋奶", unit: "count", unitGrams: 33, allergen: ["蛋类"], aliases: ["鸡蛋清", "蛋白", "鸡蛋白"] },
+  { id: "蛋黄", parent: "蛋", cat: "蛋奶", unit: "count", unitGrams: 17, allergen: ["蛋类"], aliases: ["鸡蛋黄", "鸡子黄"] },
+  { id: "鸭蛋", parent: "蛋", cat: "蛋奶", unit: "count", unitGrams: 70, allergen: ["蛋类"], aliases: ["咸鸭蛋"] },
+  { id: "鹌鹑蛋", parent: "蛋", cat: "蛋奶", unit: "count", unitGrams: 10, allergen: ["蛋类"], aliases: [] },
+  { id: "牛奶", parent: "乳", cat: "蛋奶", unit: "g", allergen: ["乳"], aliases: ["鲜牛奶", "奶", "牛乳"] },
+  { id: "奶油", parent: "乳", cat: "蛋奶", unit: "g", allergen: ["乳"], aliases: ["淡奶油", "鲜奶油"] },
+  { id: "黄油", parent: "乳", cat: "蛋奶", unit: "g", allergen: ["乳"], aliases: ["白脱", "牛油"] },
+  { id: "奶酪", parent: "乳", cat: "蛋奶", unit: "g", allergen: ["乳"], aliases: ["干酪", "芝士", "起司"] },
+  { id: "炼乳", parent: "乳", cat: "蛋奶", unit: "g", allergen: ["乳"], aliases: [] },
+
+  // ───────── 水产：鱼 ─────────
+  { id: "鱼肉", parent: "水产", cat: "水产", unit: "g", allergen: ["鱼类"], aliases: ["净鱼肉", "鱼柳", "鱼片", "白鱼肉", "鱼肉泥", "鱼青"] },
+  { id: "桂鱼", parent: "水产", cat: "水产", unit: "count", unitGrams: 750, allergen: ["鱼类"], aliases: ["鳜鱼", "桂花鱼", "季花鱼", "桂鱼肉"] },
+  { id: "鲈鱼", parent: "水产", cat: "水产", unit: "count", unitGrams: 600, allergen: ["鱼类"], aliases: ["花鲈", "鲈鱼肉"] },
+  { id: "鲫鱼", parent: "水产", cat: "水产", unit: "count", unitGrams: 350, allergen: ["鱼类"], aliases: ["鲫鱼肉", "河鲫鱼"] },
+  { id: "鳊鱼", parent: "水产", cat: "水产", unit: "count", unitGrams: 600, allergen: ["鱼类"], aliases: ["边鱼", "鳊鱼肉"] },
+  { id: "青鱼", parent: "水产", cat: "水产", unit: "count", unitGrams: 1500, allergen: ["鱼类"], aliases: ["青鱼肉", "青鲩"] },
+  { id: "草鱼", parent: "水产", cat: "水产", unit: "count", unitGrams: 1250, allergen: ["鱼类"], aliases: ["鲩鱼", "草鲩", "鲩鱼肉"] },
+  { id: "鲤鱼", parent: "水产", cat: "水产", unit: "count", unitGrams: 750, allergen: ["鱼类"], aliases: ["鲤鱼肉", "河鲤"] },
+  { id: "鳙鱼", parent: "水产", cat: "水产", unit: "count", unitGrams: 1500, allergen: ["鱼类"], aliases: ["胖头鱼", "花鲢", "鳙鱼头"] },
+  { id: "黑鱼", parent: "水产", cat: "水产", unit: "count", unitGrams: 600, allergen: ["鱼类"], aliases: ["乌鱼", "生鱼", "才鱼", "黑鱼肉"] },
+  { id: "黄鱼", parent: "水产", cat: "水产", unit: "count", unitGrams: 500, allergen: ["鱼类"], aliases: ["大黄鱼", "小黄鱼", "黄花鱼", "黄鱼肉"] },
+  { id: "鲳鱼", parent: "水产", cat: "水产", unit: "count", unitGrams: 500, allergen: ["鱼类"], aliases: ["银鲳", "白鲳", "鲳鱼肉"] },
+  { id: "带鱼", parent: "水产", cat: "水产", unit: "g", allergen: ["鱼类"], aliases: ["刀鱼", "带鱼肉"] },
+  { id: "鳗鱼", parent: "水产", cat: "水产", unit: "g", allergen: ["鱼类"], aliases: ["河鳗", "鳗鲡", "鳗鱼肉"] },
+  { id: "鳝鱼", parent: "水产", cat: "水产", unit: "g", allergen: ["鱼类"], aliases: ["黄鳝", "鳝丝", "鳝鱼肉", "鳝段"] },
+  { id: "甲鱼", parent: "水产", cat: "水产", unit: "count", unitGrams: 600, allergen: [], aliases: ["鳖", "团鱼", "甲鱼肉"] },
+  { id: "鲥鱼", parent: "水产", cat: "水产", unit: "count", unitGrams: 750, allergen: ["鱼类"], aliases: [] },
+  { id: "鲞鱼", parent: "水产", cat: "水产", unit: "g", allergen: ["鱼类"], aliases: ["白鲞", "鲞"] },
+  { id: "鱼翅", parent: "水产", cat: "干货", unit: "g", allergen: ["鱼类"], aliases: [] },
+  { id: "鱼肚", parent: "水产", cat: "干货", unit: "g", allergen: ["鱼类"], aliases: ["鱼鳔", "花胶"] },
+  { id: "鱼唇", parent: "水产", cat: "干货", unit: "g", allergen: ["鱼类"], aliases: [] },
+
+  // ───────── 水产：甲壳 / 贝 / 头足 ─────────
+  { id: "虾", parent: "水产", cat: "水产", unit: "g", allergen: ["甲壳类"], aliases: ["河虾", "青虾", "大虾", "明虾", "对虾", "虾仁", "大虾仁", "鲜虾", "虾肉", "浆虾仁", "虾胶", "虾球", "小虾", "已浆虾仁", "腌虾仁"] },
+  { id: "虾米", parent: "水产", cat: "干货", unit: "g", allergen: ["甲壳类"], aliases: ["海米", "金钩", "金钩虾", "开洋", "虾干"] },
+  { id: "虾子", parent: "水产", cat: "干货", unit: "g", allergen: ["甲壳类"], aliases: ["虾籽", "虾卵"] },
+  { id: "蟹", parent: "水产", cat: "水产", unit: "count", unitGrams: 200, allergen: ["甲壳类"], aliases: ["河蟹", "梭子蟹", "螃蟹", "羔蟹", "蟹肉", "蟹粉", "蟹黄", "肉蟹", "膏蟹"] },
+  { id: "贝", parent: "水产", cat: "水产", unit: "g", allergen: ["贝类"], aliases: ["蛤蜊", "蛏", "蛏子", "蛏干", "蚶", "扇贝", "蚌肉", "河蚌"] },
+  { id: "干贝", parent: "水产", cat: "干货", unit: "g", allergen: ["贝类"], aliases: ["瑶柱", "江瑶柱"] },
+  { id: "鲍鱼", parent: "水产", cat: "干货", unit: "g", allergen: ["贝类"], aliases: ["鲍脯"] },
+  { id: "海参", parent: "水产", cat: "干货", unit: "g", allergen: [], aliases: ["水发海参", "刺参", "海参片"] },
+  { id: "鱿鱼", parent: "水产", cat: "水产", unit: "g", allergen: ["贝类"], aliases: ["鱿鱼须", "水发鱿鱼", "鱿鱼肉"] },
+  { id: "墨鱼", parent: "水产", cat: "水产", unit: "g", allergen: ["贝类"], aliases: ["乌贼", "墨斗鱼", "墨鱼肉", "墨鱼身段"] },
+  { id: "田螺", parent: "水产", cat: "水产", unit: "g", allergen: ["贝类"], aliases: ["螺蛳", "螺肉", "田螺肉"] },
+  { id: "海蜇", parent: "水产", cat: "水产", unit: "g", allergen: ["贝类"], aliases: ["海蜇皮", "蜇头"] },
+  { id: "牛蛙", parent: "水产", cat: "水产", unit: "count", unitGrams: 300, allergen: [], aliases: ["田鸡", "蛙腿"] },
+
+  // ───────── 蔬菜 ─────────
+  { id: "青菜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["小青菜", "青菜心", "小白菜", "白菜秧", "郊菜", "时令菜", "绿叶菜", "绿叶蔬菜", "绿蔬菜", "小菜", "青菜叶", "时令菜心", "菜叶"] },
+  { id: "大白菜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["白菜", "黄芽菜", "白菜心", "大白菜心", "胶菜"] },
+  { id: "菠菜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["菠菜叶", "菠菜心", "菠菜段"] },
+  { id: "油菜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["油菜心", "菜心", "菜苔", "菜薹", "油菜叶"] },
+  { id: "芹菜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["药芹", "芹黄", "芹菜段", "西芹"] },
+  { id: "韭菜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["韭", "韭菜段", "韭菜末"] },
+  { id: "韭黄", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["黄韭"] },
+  { id: "蒜苗", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["青蒜", "蒜薹", "蒜苔", "青蒜段", "青蒜丝", "蒜苗段"] },
+  { id: "大蒜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["蒜", "蒜瓣", "蒜头", "蒜泥", "蒜末", "蒜片", "蒜米", "蒜茸", "大蒜头", "蒜瓣末"] },
+  { id: "姜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["生姜", "老姜", "嫩姜", "姜末", "姜片", "姜丝", "姜块", "姜米", "姜汁", "姜花", "姜 末"] },
+  { id: "葱", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["小葱", "大葱", "香葱", "葱段", "葱花", "葱结", "葱末", "葱丝", "葱条", "葱片", "葱白", "葱白段", "大葱白", "葱米", "小葱末", "小葱段", "小葱结", "葱榄"] },
+  { id: "洋葱", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["葱头", "元葱", "球葱", "洋葱头"] },
+  { id: "辣椒", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["红辣椒", "青辣椒", "尖椒", "鲜辣椒", "辣椒丝", "大青辣椒"] },
+  { id: "青椒", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["甜椒", "灯笼椒", "圆椒", "菜椒"] },
+  { id: "茄子", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["落苏", "茄"] },
+  { id: "番茄", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["西红柿", "蕃茄"] },
+  { id: "黄瓜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["青瓜", "胡瓜"] },
+  { id: "冬瓜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["白瓜"] },
+  { id: "南瓜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["番瓜", "倭瓜"] },
+  { id: "丝瓜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["水瓜"] },
+  { id: "苦瓜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["凉瓜"] },
+  { id: "瓠瓜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["夜开花", "蒲瓜", "葫芦瓜"] },
+  { id: "萝卜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["白萝卜", "萝卜丝", "萝卜条", "萝卜块", "象牙白"] },
+  { id: "胡萝卜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["红萝卜", "黄萝卜"] },
+  { id: "土豆", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["马铃薯", "洋山芋", "土豆丝", "土豆片"] },
+  { id: "山药", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["淮山", "山药条"] },
+  { id: "芋艿", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["芋头", "小芋头"] },
+  { id: "藕", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["莲藕", "藕段", "藕片", "莲菜", "莲菜（藕）"] },
+  { id: "荸荠", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["马蹄", "地栗", "荸荠片", "荸荠末", "削皮荸荠"] },
+  { id: "茭白", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["茭笋", "茭瓜"] },
+  { id: "莴笋", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["莴苣", "青笋", "莴笋叶"] },
+  { id: "笋", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["鲜笋", "春笋", "冬笋", "竹笋", "笋肉", "笋片", "笋丝", "笋块", "笋尖", "冬笋片", "冬笋肉", "春笋片", "竹笋片", "竹笋肉", "鲜笋肉", "笋花", "笋 片"] },
+  { id: "玉兰片", parent: "蔬菜", cat: "干货", unit: "g", aliases: ["笋干", "干笋", "玉兰片丁", "玉兰片丝"] },
+  { id: "豌豆", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["青豆", "豌豆粒", "罐头青豆", "鲜豌豆"] },
+  { id: "豌豆苗", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["豆苗", "豌豆苗尖", "豆苗尖"] },
+  { id: "毛豆", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["青毛豆", "毛豆米"] },
+  { id: "蚕豆", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["胡豆"] },
+  { id: "豇豆", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["长豆", "豆角", "长豇豆"] },
+  { id: "四季豆", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["扁豆", "刀豆", "芸豆"] },
+  { id: "豆芽", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["绿豆芽", "黄豆芽", "银芽"] },
+  { id: "荠菜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["地菜"] },
+  { id: "草头", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["金花菜", "苜蓿"] },
+  { id: "马兰头", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: [] },
+  { id: "枸杞头", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["枸杞芽"] },
+  { id: "香椿", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["香椿芽"] },
+  { id: "蕨菜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["蕨儿菜"] },
+  { id: "西洋菜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["豆瓣菜", "水蔊菜"] },
+  { id: "生菜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["莴苣叶"] },
+  { id: "紫苏叶", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["紫苏"] },
+  { id: "荷叶", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["鲜荷叶"] },
+  { id: "香菜", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["芫荽", "香菜叶", "香菜末", "香菜段"] },
+  { id: "芦笋", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["石刁柏"] },
+  { id: "洋葱苗", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["葱叶"] },
+
+  // ───────── 菌菇 / 干货菜 ─────────
+  { id: "蘑菇", parent: "菌菇", cat: "菌菇", unit: "g", aliases: ["鲜蘑菇", "白蘑菇", "洋蘑菇", "蘑菇片", "罐头鲜蘑"] },
+  { id: "香菇", parent: "菌菇", cat: "菌菇", unit: "g", aliases: ["冬菇", "花菇", "香蕈", "新香菇", "香菇丝", "香菇片", "香菇丁", "香菇末", "水发香菇", "水发冬菇", "冬菇片", "冬菇丁"] },
+  { id: "口蘑", parent: "菌菇", cat: "菌菇", unit: "g", aliases: ["口蘑菇", "白菌"] },
+  { id: "草菇", parent: "菌菇", cat: "菌菇", unit: "g", aliases: [] },
+  { id: "平菇", parent: "菌菇", cat: "菌菇", unit: "g", aliases: ["侧耳"] },
+  { id: "金针菇", parent: "菌菇", cat: "菌菇", unit: "g", aliases: [] },
+  { id: "木耳", parent: "菌菇", cat: "菌菇", unit: "g", aliases: ["黑木耳", "云耳", "木耳丝"] },
+  { id: "银耳", parent: "菌菇", cat: "干货", unit: "g", aliases: ["白木耳", "雪耳"] },
+  { id: "黄花菜", parent: "菌菇", cat: "干货", unit: "g", aliases: ["金针菜", "干黄花"] },
+  { id: "竹荪", parent: "菌菇", cat: "干货", unit: "g", aliases: ["竹笙"] },
+  { id: "发菜", parent: "菌菇", cat: "干货", unit: "g", aliases: [] },
+  { id: "海带", parent: "蔬菜", cat: "干货", unit: "g", aliases: ["昆布", "海带丝"] },
+  { id: "紫菜", parent: "蔬菜", cat: "干货", unit: "g", aliases: [] },
+
+  // ───────── 豆制品 ─────────
+  { id: "豆腐", parent: "豆制品", cat: "豆制品", unit: "g", allergen: ["大豆"], aliases: ["嫩豆腐", "老豆腐", "南豆腐", "北豆腐", "豆腐块"] },
+  { id: "豆腐干", parent: "豆制品", cat: "豆制品", unit: "g", allergen: ["大豆"], aliases: ["香干", "白干", "豆干", "茶干", "豆腐干丝"] },
+  { id: "豆腐皮", parent: "豆制品", cat: "豆制品", unit: "g", allergen: ["大豆"], aliases: ["豆皮", "豆腐衣", "油皮", "豆腐皮丝"] },
+  { id: "百叶", parent: "豆制品", cat: "豆制品", unit: "g", allergen: ["大豆"], aliases: ["千张", "百叶丝"] },
+  { id: "腐竹", parent: "豆制品", cat: "豆制品", unit: "g", allergen: ["大豆"], aliases: ["支竹", "腐竹段"] },
+  { id: "油豆腐", parent: "豆制品", cat: "豆制品", unit: "g", allergen: ["大豆"], aliases: ["豆泡", "油豆腐泡"] },
+  { id: "面筋", parent: "豆制品", cat: "豆制品", unit: "g", allergen: ["小麦"], aliases: ["油面筋", "面筋泡", "烤麸"] },
+  { id: "素鸡", parent: "豆制品", cat: "豆制品", unit: "g", allergen: ["大豆"], aliases: ["素肠"] },
+  { id: "豆沙", parent: "豆制品", cat: "豆制品", unit: "g", allergen: ["大豆"], aliases: ["红豆沙", "细沙", "豆沙馅", "洗沙馅", "豆沙[见“全料藕丸”注]"] },
+  { id: "豆奶", parent: "豆制品", cat: "蛋奶", unit: "g", allergen: ["大豆"], aliases: ["豆浆", "豆乳"] },
+
+  // ───────── 谷物 / 主食 ─────────
+  { id: "大米", parent: "谷物", cat: "粮油", unit: "g", aliases: ["粳米", "白米", "大米饭", "米"] },
+  { id: "糯米", parent: "谷物", cat: "粮油", unit: "g", aliases: ["江米", "元米"] },
+  { id: "小米", parent: "谷物", cat: "粮油", unit: "g", aliases: ["粟米"] },
+  { id: "薏仁米", parent: "谷物", cat: "粮油", unit: "g", aliases: ["薏米", "薏苡仁"] },
+  { id: "粉丝", parent: "谷物", cat: "粮油", unit: "g", aliases: ["粉条", "线粉", "龙口粉丝"] },
+  { id: "米粉", parent: "谷物", cat: "粮油", unit: "g", aliases: ["米线", "河粉"] },
+  { id: "面包", parent: "谷物", cat: "粮油", unit: "g", aliases: ["咸面包", "面包屑", "面包糠", "方面包"] },
+  { id: "挂面", parent: "谷物", cat: "粮油", unit: "g", aliases: ["面条", "面"] },
+
+  // ───────── 甜味/果料 ─────────
+  { id: "红枣", parent: "水果", cat: "干货", unit: "g", aliases: ["干枣", "红枣肉", "小枣"] },
+  { id: "蜜枣", parent: "水果", cat: "干货", unit: "g", aliases: ["蜜枣泥"] },
+  { id: "莲子", parent: "干货", cat: "干货", unit: "g", aliases: ["湘莲", "干湘莲", "莲子肉"] },
+  { id: "桂圆肉", parent: "水果", cat: "干货", unit: "g", aliases: ["龙眼肉", "桂圆", "桂元肉"] },
+  { id: "栗子", parent: "坚果", cat: "干货", unit: "g", aliases: ["板栗", "栗子肉"] },
+  { id: "核桃仁", parent: "坚果", cat: "干货", unit: "g", allergen: ["坚果"], aliases: ["核桃", "胡桃", "核桃肉"] },
+  { id: "松子仁", parent: "坚果", cat: "干货", unit: "g", allergen: ["坚果"], aliases: ["松子", "松仁"] },
+  { id: "瓜子仁", parent: "坚果", cat: "干货", unit: "g", allergen: ["坚果"], aliases: ["瓜子", "葵花子仁"] },
+  { id: "花生米", parent: "坚果", cat: "干货", unit: "g", allergen: ["花生"], aliases: ["花生", "花生仁", "花生米粒"] },
+  { id: "芝麻", parent: "坚果", cat: "干货", unit: "g", allergen: ["芝麻"], aliases: ["白芝麻", "黑芝麻", "芝麻仁", "熟芝麻"] },
+  { id: "青梅", parent: "水果", cat: "干货", unit: "g", aliases: ["乌梅", "梅子"] },
+  { id: "山楂糕", parent: "水果", cat: "干货", unit: "g", aliases: ["山楂", "山楂片", "金糕"] },
+  { id: "金桔饼", parent: "水果", cat: "干货", unit: "g", aliases: ["蜜桔饼", "桔饼"] },
+  { id: "葡萄干", parent: "水果", cat: "干货", unit: "g", aliases: [] },
+  { id: "糖桂花", parent: "调味", cat: "调味", unit: "g", aliases: ["桂花", "蜜桂花", "桂花糖", "玫瑰糖", "糖玫瑰"] },
+
+  // ───────── 汤底 ─────────
+  { id: "高汤", parent: "汤底", cat: "其他", unit: "g", aliases: ["鸡汤", "鸡清汤", "鸡鸭汤", "肉汤", "猪肉汤", "肉清汤", "清汤", "上汤", "二汤", "淡二汤", "毛汤", "杂骨汤", "排骨汤", "牛肉汤", "白汤", "奶汤", "骨头汤", "鲜汤", "素上汤", "鸭清汤", "素汁汤", "鸡清汤®"] },
+  { id: "芡汤", parent: "汤底", cat: "其他", unit: "g", aliases: [] },
+
+  // ───────── 第二轮补充（按未识别清单补的） ─────────
+  { id: "猪肉", parent: "猪肉", cat: "肉禽", unit: "g", aliases: ["猪肉丝", "猪肉片", "猪肉丁", "猪肉块", "猪肉条", "猪肉末", "肥瘦猪肉", "猪五花肋肉", "猪腿肉", "猪腿瘦肉"] },
+  { id: "水", parent: "其他", cat: "其他", unit: "g", aliases: ["清水", "白开水", "开水", "凉水", "冷水", "温水", "热水", "沸水", "汤水"] },
+  { id: "葱姜料", parent: "蔬菜", cat: "蔬菜", unit: "g", aliases: ["姜汁酒", "葱椒绍酒", "葱姜汁", "葱姜汁水", "葱椒泥", "葱姜末", "葱姜油", "葱椒", "葱椒末", "姜汁酒水"] },
+  { id: "花椒油", parent: "油脂", cat: "粮油", unit: "g", aliases: ["葱椒油", "花椒油（见“干烧鸭脯”注）"] },
+  { id: "糖色", parent: "调味", cat: "调味", unit: "g", aliases: ["糖浆", "糖色水", "糖色（见“炒肉末”注）"] },
+  { id: "糖醋", parent: "调味", cat: "调味", unit: "g", aliases: ["糖醋汁", "糖醋卤"] },
+  { id: "桂花酱", parent: "调味", cat: "调味", unit: "g", aliases: ["黄桂", "桂花糖酱"] },
+  { id: "青红丝", parent: "水果", cat: "干货", unit: "g", aliases: ["果料", "红绿丝", "青丝", "红丝"] },
+  { id: "泡菜", parent: "蔬菜", cat: "干货", unit: "g", aliases: ["酸泡菜", "四川泡菜"] },
+  { id: "雪里蕻", parent: "蔬菜", cat: "干货", unit: "g", aliases: ["腌雪里蕻", "雪菜", "咸菜"] },
+  { id: "白果", parent: "坚果", cat: "干货", unit: "g", aliases: ["白果肉", "银杏"] },
+  { id: "枸杞", parent: "干货", cat: "干货", unit: "g", aliases: ["枸杞子"] },
+  { id: "枣泥", parent: "调味", cat: "干货", unit: "g", aliases: ["枣泥馅"] },
+  // 鱼露原名虾油/卤虾油，由虾发酵而来——甲壳类过敏按数据层拦截（W2，E3#3：上海-069/088 曾靠标题防御兜底）
+  { id: "鱼露", parent: "调味", cat: "调味", unit: "g", allergen: ["甲壳类"], aliases: ["虾油", "卤虾油"] },
+  { id: "糕点", parent: "谷物", cat: "粮油", unit: "g", aliases: ["鸡蛋黄糕", "蛋糕", "翠绿蛋糕", "黄色蛋糕", "双色蛋糕"] },
+];
+
+
+/**
+ * 合并「子任务从真实用词里挖出来的补充词表」。
+ * 同一 id 不新开一条，而是把别名并进去——否则 byId 会被后一条覆盖，基础别名反而丢失。
+ */
+import { EXTRA } from "./lexicon-extra.mjs";
+
+export const CANON = (() => {
+  const map = new Map(BASE.map((e) => [e.id, { ...e, aliases: [...new Set([e.id, ...(e.aliases ?? [])])] }]));
+  for (const x of EXTRA) {
+    const cur = map.get(x.id);
+    if (cur) {
+      cur.aliases = [...new Set([...cur.aliases, ...(x.aliases ?? [])])];
+    } else {
+      map.set(x.id, { ...x, aliases: [...new Set([x.id, ...(x.aliases ?? [])])] });
+    }
+  }
+  for (const e of map.values()) e.aliases = e.aliases.filter((a) => a !== e.id);
+  return [...map.values()];
+})();
+
+/**
+ * W5：最小可买份量（菜市场现实口径，不是营养口径）。
+ * 采购清单聚合后低于 minBuy 的项要提到 minBuy——你没法跟摊主说「来 20g 里脊」。
+ * 键是 CANON 的 id（buildShopping 按 canon 聚合）：任务口语里的「猪排骨/面条/白菜/
+ * 猪肉末/绿豆芽」在 lexicon 里已归一成 排骨/挂面/大白菜/肉末/豆芽，这里只放标准名。
+ * note 是印在清单上的那句人话。
+ */
+export const PURCHASE_UNITS = {
+  // ───── 肉禽：按块/按只卖，不零切 ─────
+  猪肉: { minBuy: 250, note: "半斤起" },
+  猪瘦肉: { minBuy: 250, note: "半斤起" },
+  五花肉: { minBuy: 500, note: "一条约 500g" },
+  里脊: { minBuy: 300, note: "一根小里脊" },
+  排骨: { minBuy: 400, note: "一根砍段约 400g" },
+  肉末: { minBuy: 300, note: "绞肉六两起" },
+  肥膘: { minBuy: 250, note: "半斤起" },
+  火腿: { minBuy: 100, note: "按块切，二两起" },
+  腊肉: { minBuy: 250, note: "半斤起" },
+  香肠: { minBuy: 250, note: "一把约 250g" },
+  叉烧: { minBuy: 250, note: "半斤起" },
+  猪肝: { minBuy: 300, note: "整副太多，买半副" },
+  猪肚: { minBuy: 500, note: "一只约 1000g，可买半个" },
+  猪腰: { minBuy: 300, note: "一对约 300g" },
+  猪蹄: { minBuy: 500, note: "一只约 500g" },
+  猪蹄膀: { minBuy: 750, note: "一只 750～1000g" },
+  牛肉: { minBuy: 300, note: "六两起" },
+  羊肉: { minBuy: 300, note: "六两起" },
+  鸡肉: { minBuy: 400, note: "半只或腿翅拼" },
+  鸡胸: { minBuy: 300, note: "两块鸡胸" },
+  鸡腿: { minBuy: 400, note: "两只鸡腿" },
+  光鸡: { minBuy: 1000, note: "整鸡一只" },
+  鸡翅: { minBuy: 300, note: "半斤到一斤装" },
+  鸡爪: { minBuy: 300, note: "一斤起称，可买半份" },
+  鸭: { minBuy: 1500, note: "整鸭一只" },
+  鸭肫: { minBuy: 200, note: "三四个" },
+
+  // ───── 蛋奶：按板/按盒 ─────
+  鸡蛋: { minBuy: 300, note: "6 个" },
+  鸭蛋: { minBuy: 300, note: "4～5 个" },
+  鸭蛋黄: { minBuy: 100, note: "两三个咸蛋黄" },
+  鹌鹑蛋: { minBuy: 250, note: "半盒" },
+  牛奶: { minBuy: 250, note: "一盒" },
+
+  // ───── 豆制品：按块/按张 ─────
+  豆腐: { minBuy: 400, note: "一块" },
+  豆腐干: { minBuy: 200, note: "两块" },
+  豆腐皮: { minBuy: 200, note: "三四张" },
+  百叶: { minBuy: 300, note: "两三张" },
+  腐竹: { minBuy: 100, note: "一把" },
+  面筋: { minBuy: 200, note: "油面筋一袋" },
+  素鸡: { minBuy: 400, note: "一根约 400g" },
+
+  // ───── 蔬菜：按把/按个称 ─────
+  土豆: { minBuy: 500, note: "2～3 个" },
+  番茄: { minBuy: 400, note: "3 个" },
+  大白菜: { minBuy: 500, note: "半颗" },
+  青菜: { minBuy: 300, note: "一把" },
+  菠菜: { minBuy: 300, note: "一把" },
+  芹菜: { minBuy: 400, note: "两三根" },
+  冬瓜: { minBuy: 1000, note: "切一段" },
+  黄瓜: { minBuy: 400, note: "2～3 根" },
+  茄子: { minBuy: 400, note: "2～3 根" },
+  青椒: { minBuy: 400, note: "4 个" },
+  洋葱: { minBuy: 300, note: "1～2 个" },
+  胡萝卜: { minBuy: 500, note: "2～3 根" },
+  萝卜: { minBuy: 500, note: "半根到一根" },
+  香菇: { minBuy: 300, note: "鲜香菇按斤称，买六两" },
+  蘑菇: { minBuy: 300, note: "鲜蘑菇一份" },
+  口蘑: { minBuy: 300, note: "约 300g 一份" },
+  木耳: { minBuy: 250, note: "水发木耳五两" },
+  豆芽: { minBuy: 300, note: "约 300g 一份" },
+  油菜: { minBuy: 300, note: "一把" },
+  韭菜: { minBuy: 300, note: "一把" },
+  豌豆苗: { minBuy: 300, note: "一把" },
+  莴笋: { minBuy: 400, note: "一根" },
+  茭白: { minBuy: 300, note: "3～4 根" },
+  笋: { minBuy: 400, note: "两根春笋" },
+  藕: { minBuy: 500, note: "一节" },
+  荸荠: { minBuy: 300, note: "约 300g 一份" },
+  豌豆: { minBuy: 300, note: "约 300g 一份" },
+  山药: { minBuy: 400, note: "一根" },
+  南瓜: { minBuy: 500, note: "切一块" },
+  葱: { minBuy: 150, note: "两三根" },
+  姜: { minBuy: 100, note: "一块" },
+  蒜苗: { minBuy: 150, note: "两三根" },
+  香椿: { minBuy: 200, note: "一小把（时令）" },
+  四季豆: { minBuy: 300, note: "约 300g 一份" },
+
+  // ───── 水产：按条/按只 ─────
+  虾: { minBuy: 300, note: "六两起" },
+  鱼肉: { minBuy: 400, note: "一条鱼出片" },
+  鲫鱼: { minBuy: 500, note: "一条大鲫鱼" },
+  鲤鱼: { minBuy: 750, note: "一条" },
+  草鱼: { minBuy: 600, note: "一段或一小条" },
+  鲈鱼: { minBuy: 500, note: "一条" },
+  带鱼: { minBuy: 400, note: "中段一刀" },
+  桂鱼: { minBuy: 750, note: "一条" },
+  黄鱼: { minBuy: 500, note: "一条" },
+  鳊鱼: { minBuy: 600, note: "一条" },
+  黑鱼: { minBuy: 600, note: "一条" },
+  鳝鱼: { minBuy: 400, note: "两条起" },
+  蟹: { minBuy: 400, note: "两只" },
+  黄花鱼肉: { minBuy: 300, note: "一条黄鱼出鱼段" },
+  海参: { minBuy: 50, note: "干海参一小包，水发后约四五只" },
+
+  // ───── 粮油/干货：按袋/按把 ─────
+  大米: { minBuy: 1000, note: "两斤起" },
+  挂面: { minBuy: 500, note: "一小袋 500g" },
+  面粉: { minBuy: 500, note: "一斤起" },
+  糯米: { minBuy: 500, note: "一斤起" },
+  粉丝: { minBuy: 100, note: "一小把约 100g" },
+  玉兰片: { minBuy: 200, note: "干货一小袋" },
+  虾米: { minBuy: 50, note: "一小包" },
+  莲子: { minBuy: 100, note: "一小袋" },
+};
+
+/** 过敏原展示名 */
+export const ALLERGEN_LABEL = {
+  甲壳类: "甲壳类（虾蟹）",
+  贝类: "贝类（贝、鱿鱼、墨鱼）",
+  鱼类: "鱼类",
+  蛋类: "蛋类",
+  乳: "乳制品",
+  大豆: "大豆",
+  花生: "花生",
+  坚果: "坚果",
+  芝麻: "芝麻",
+  小麦: "小麦（面筋）",
+};
