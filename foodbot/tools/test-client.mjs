@@ -131,8 +131,8 @@ check("preparing 阶段不崩", Boolean(byKey.recipe_search({ phase: "preparing"
 
 // ── 右侧栏页签 ──
 const body = registered.find((r) => r.name === "sidebar.right.pane.tab");
-check("注册了侧栏页签主体", Boolean(body && body.key === "dsh-foodbot-board"), body ? body.key : "missing");
-check("注册了侧栏页签类型", tabDefs.some((d) => d.kind === "foodbot-board" && d.id === "dsh-foodbot-board"), JSON.stringify(tabDefs.map((d) => d.kind)));
+check("注册了侧栏页签主体", Boolean(body && body.key === "dsh-recipe-homie-board"), body ? body.key : "missing");
+check("注册了侧栏页签类型", tabDefs.some((d) => d.kind === "recipe-homie-board" && d.id === "dsh-recipe-homie-board"), JSON.stringify(tabDefs.map((d) => d.kind)));
 check("页签主体带 inject 面", typeof body?.inject === "function");
 
 // 空会话：给空状态，不抛
@@ -157,7 +157,7 @@ const pin = find(recipeTree, (el) => el.tag === "button" && text(el) === "钉到
 check("菜卡上有「钉到侧栏」", Boolean(pin));
 if (pin) {
   pin.props.onClick();
-  check("点「钉到侧栏」打开 foodbot-board", opened.includes("foodbot-board"), JSON.stringify(opened));
+  check("点「钉到侧栏」打开 recipe-homie-board", opened.includes("recipe-homie-board"), JSON.stringify(opened));
 }
 const shuffleTree = byKey.menu_shuffle({ phase: "result", toolName: "menu_shuffle", block: { meta: sample.shuffle, content: [] } });
 check("摇桌卡上有「钉到侧栏」", Boolean(find(shuffleTree, (el) => el.tag === "button" && text(el) === "钉到侧栏")));
@@ -180,7 +180,7 @@ check("页签优先显示板书（标题 + 采购）", boardText.includes("今�
 opened.length = 0;
 const autoProps = { phase: "result", toolName: "show_card", callId: "call-1", block: { meta: sample.board, content: [] } };
 byKey.show_card(autoProps);
-check("新板书自动打开侧栏", opened.length === 1 && opened[0] === "foodbot-board", JSON.stringify(opened));
+check("新板书自动打开侧栏", opened.length === 1 && opened[0] === "recipe-homie-board", JSON.stringify(opened));
 byKey.show_card({ ...autoProps });
 check("同一张板书不重复弹", opened.length === 1, JSON.stringify(opened));
 byKey.show_card({ ...autoProps, callId: "call-2" });

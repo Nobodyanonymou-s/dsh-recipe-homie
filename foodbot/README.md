@@ -1,4 +1,4 @@
-# dsh-foodbot 技术文档
+# dsh-recipe-homie 技术文档
 
 把老菜谱书（OCR）变成一套**能替你决定吃什么**的本地工具：查菜谱、记口味、排菜单、算采购清单、随机摇一桌。
 
@@ -186,10 +186,10 @@ node tools/audit.mjs               # 数据审计
 路径挂载只有 Host 半边；要让浏览器也加载客户端卡片，必须装成包。GitHub 直装（包在仓库 `foodbot/` 子目录，`#path:` 指过去）：
 
 ```sh
-dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-foodbot#path:foodbot"
+dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-recipe-homie#path:foodbot"
 ```
 
-或本地 tarball：`npm pack --pack-destination ./dist` 后 `dsh plugin add ./dist/dsh-foodbot-<version>.tgz`。
+或本地 tarball：`npm pack --pack-destination ./dist` 后 `dsh plugin add ./dist/dsh-recipe-homie-<version>.tgz`。
 
 `cordis.patch.yml` 的 `config.dataDir` 指向你自己的语料目录（可写——画像与状态写在旁边）；改代码要重打包重装重启，重建数据什么都不用做（mtime 自动重载）。
 

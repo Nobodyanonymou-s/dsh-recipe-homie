@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 
-export const name = "foodbot";
+export const name = "recipe-homie";
 export const inject = ["tools"];
 
 export const Config = await (async () => {
@@ -1446,5 +1446,5 @@ export function registerTools(ctx, config = {}) {
 }
 
 export function apply(ctx, config = {}) {
-  ctx.effect(() => registerTools(ctx, config), "foodbot.tools()");
+  ctx.effect(() => registerTools(ctx, config), "recipe-homie.tools()");
 }

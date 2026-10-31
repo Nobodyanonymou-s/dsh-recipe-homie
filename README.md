@@ -1,4 +1,4 @@
-# dsh-foodbot
+# dsh-recipe-homie
 
 **中文** | [English](./README.en.md)
 
@@ -23,16 +23,16 @@
 **未上架插件市场，也未发布 npm**——从 GitHub 直装（包在仓库的 `foodbot/` 子目录，用 `#path:` 指过去）：
 
 ```sh
-dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-foodbot#path:foodbot"
+dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-recipe-homie#path:foodbot"
 ```
 
 离线/慢网备选：clone 后打 tarball 本地装：
 
 ```sh
-git clone https://github.com/Nobodyanonymou-s/dsh-foodbot.git
-cd dsh-foodbot/foodbot
+git clone https://github.com/Nobodyanonymou-s/dsh-recipe-homie.git
+cd dsh-recipe-homie/foodbot
 npm pack --pack-destination ./dist
-dsh plugin --profile desktop add ./dist/dsh-foodbot-<version>.tgz
+dsh plugin --profile desktop add ./dist/dsh-recipe-homie-<version>.tgz
 ```
 
 装包后配一下数据目录，二选一：

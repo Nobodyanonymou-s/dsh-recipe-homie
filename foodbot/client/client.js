@@ -9,7 +9,7 @@
  * replay from an older session never breaks.
  */
 window.__ModuleLoader__.load({
-  id: "dsh-foodbot",
+  id: "dsh-recipe-homie",
   factory: (require) => {
     const React = require("react");
     const module = { exports: {} };
@@ -422,7 +422,7 @@ window.__ModuleLoader__.load({
     // ───────── 板书自动弹侧栏 ─────────
     // 新生成的板书卡出现时自动打开「这桌」页签；同一张卡（callId）只弹一次，
     // 用 localStorage 记住，刷新/重开、翻历史都不会反复弹。
-    const AUTO_KEY = "dsh-foodbot:board-auto-opened";
+    const AUTO_KEY = "dsh-recipe-homie:board-auto-opened";
     const autoOpened = new Set();
     function boardAlreadyAutoOpened(callId) {
       if (!callId || autoOpened.has(callId)) return true;
@@ -490,8 +490,8 @@ window.__ModuleLoader__.load({
         recipes.map((r) => h(BoardDish, { key: r.id, meta: r, t })));
     }
 
-    const BOARD_TAB_ID = "dsh-foodbot-board";
-    const BOARD_KIND = "foodbot-board";
+    const BOARD_TAB_ID = "dsh-recipe-homie-board";
+    const BOARD_KIND = "recipe-homie-board";
 
     const VIEWS = [
       ["recipe_get", RecipeCard],
@@ -530,7 +530,7 @@ window.__ModuleLoader__.load({
       if (tabTypes && typeof tabTypes.register === "function") {
         ctx.effect(
           () => tabTypes.register({ id: BOARD_TAB_ID, kind: BOARD_KIND, title: () => "这桌" }),
-          "foodbot:board-tab",
+          "recipe-homie:board-tab",
         );
       }
       ctx.effect(
@@ -552,7 +552,7 @@ window.__ModuleLoader__.load({
             };
           },
         }, BoardTab)),
-        "foodbot:board-view",
+        "recipe-homie:board-view",
       );
       for (const [key, View] of VIEWS) {
         const Pinned = (props) => h(View, {
@@ -562,7 +562,7 @@ window.__ModuleLoader__.load({
         });
         ctx.effect(
           () => ctx.slots.inject("tool.call.toolview", () => ctx.slots.register({ name: "tool.call.toolview", key }, Pinned)),
-          `foodbot:toolview:${key}`,
+          `recipe-homie:toolview:${key}`,
         );
       }
     }

@@ -1,4 +1,4 @@
-# dsh-foodbot
+# dsh-recipe-homie
 
 English | **[中文](./README.md)**
 
@@ -23,16 +23,16 @@ Turns a shelf of classic Chinese cookbooks into a structured recipe library with
 **Not on the plugin marketplace, not on npm** — install straight from GitHub (the package lives in the `foodbot/` subdirectory, so point `#path:` at it):
 
 ```sh
-dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-foodbot#path:foodbot"
+dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-recipe-homie#path:foodbot"
 ```
 
 Offline / slow-network fallback — clone and pack a tarball locally:
 
 ```sh
-git clone https://github.com/Nobodyanonymou-s/dsh-foodbot.git
-cd dsh-foodbot/foodbot
+git clone https://github.com/Nobodyanonymou-s/dsh-recipe-homie.git
+cd dsh-recipe-homie/foodbot
 npm pack --pack-destination ./dist
-dsh plugin --profile desktop add ./dist/dsh-foodbot-<version>.tgz
+dsh plugin --profile desktop add ./dist/dsh-recipe-homie-<version>.tgz
 ```
 
 After installing, point it at a data directory — pick one:

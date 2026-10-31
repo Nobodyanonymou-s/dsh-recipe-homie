@@ -1,9 +1,9 @@
 {
-  "name": "dsh-foodbot",
-  "version": "0.5.8",
+  "name": "dsh-recipe-homie",
+  "version": "0.6.0",
   "license": "Apache-2.0",
   "type": "module",
-  "description": "把《中国菜谱》各省分册变成 DSH 里的菜谱检索工具：按食材/菜系/技法找菜，取原始斤两配比与出处页码",
+  "description": "DSH 里的中国菜谱插件：正派菜谱检索、按人排菜单、采购清单、随机挑战 / Chinese-cooking plugin for DSH",
   "main": "./src/plugin.mjs",
   "exports": {
     ".": "./src/plugin.mjs",
@@ -16,7 +16,9 @@
     "client",
     "tools",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "data-sample",
+    "presets.example.json"
   ],
   "dsh": {
     "bundle": {
@@ -27,7 +29,8 @@
     }
   },
   "engines": {
-    "node": "^22.19.0 || >=24.0.0"
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.0-rc.2"
   },
   "scripts": {
     "build": "node src/build.mjs",
@@ -46,5 +49,17 @@
     "demo": "node tools/plan-demo.mjs 3 4",
     "inspect": "node tools/inspect.mjs",
     "lexicon": "node tools/lexicon-report.mjs"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Nobodyanonymou-s/dsh-recipe-homie.git"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "recipe",
+    "cooking",
+    "chinese-cuisine",
+    "meal-planning"
+  ]
 }
