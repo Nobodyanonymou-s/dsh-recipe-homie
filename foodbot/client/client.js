@@ -419,9 +419,42 @@ window.__ModuleLoader__.load({
           : null);
     }
 
-    /** show_card 的 toolview：同一张板书，带上「钉到侧栏」。 */
+    // ───────── 板书自动弹侧栏 ─────────
+    // 新生成的板书卡出现时自动打开「这桌」页签；同一张卡（callId）只弹一次，
+    // 用 localStorage 记住，刷新/重开、翻历史都不会反复弹。
+    const AUTO_KEY = "dsh-foodbot:board-auto-opened";
+    const autoOpened = new Set();
+    function boardAlreadyAutoOpened(callId) {
+      if (!callId || autoOpened.has(callId)) return true;
+      try {
+        const raw = window.localStorage.getItem(AUTO_KEY);
+        const list = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(list) && list.includes(callId)) return true;
+      } catch {}
+      return false;
+    }
+    function rememberBoardAutoOpen(callId) {
+      autoOpened.add(callId);
+      try {
+        const raw = window.localStorage.getItem(AUTO_KEY);
+        const list = raw ? JSON.parse(raw) : [];
+        const next = [...new Set([...Array.isArray(list) ? list : [], callId])].slice(-50);
+        window.localStorage.setItem(AUTO_KEY, JSON.stringify(next));
+      } catch {}
+    }
+
+    /** show_card 的 toolview：同一张板书，带上「钉到侧栏」；新卡还会自动把侧栏弹出来。 */
     function ShowCardView(props) {
       const meta = cardOf(props);
+      const effect = React.useEffect;
+      if (typeof effect === "function") {
+        effect(() => {
+          if (props.phase !== "result") return;
+          const m = cardOf(props);
+          if (!m || m.kind !== "board") return;
+          if (typeof props.onAutoOpen === "function") props.onAutoOpen();
+        }, [props.phase, props.callId]);
+      }
       if (!meta || meta.kind !== "board") return h(Generic, props);
       const t = lang(props);
       return h(BoardView, { meta, t, onPin: props.onPin });
@@ -486,6 +519,12 @@ window.__ModuleLoader__.load({
         const sidebar = service("sidebarRight");
         if (sidebar && typeof sidebar.openTab === "function") sidebar.openTab(BOARD_KIND);
       };
+      /** 新板书出现时弹一次；同一张卡只弹一次（翻历史、刷新都不重复）。 */
+      const autoOpenBoard = (callId) => {
+        if (!callId || boardAlreadyAutoOpened(callId)) return;
+        rememberBoardAutoOpen(callId);
+        openBoard();
+      };
       // 页签类型：宿主组态没带右侧栏时跳过，不影响对话里的卡。
       const tabTypes = service("sidebarRightTabs");
       if (tabTypes && typeof tabTypes.register === "function") {
@@ -516,7 +555,11 @@ window.__ModuleLoader__.load({
         "foodbot:board-view",
       );
       for (const [key, View] of VIEWS) {
-        const Pinned = (props) => h(View, { ...props, onPin: openBoard });
+        const Pinned = (props) => h(View, {
+          ...props,
+          onPin: openBoard,
+          onAutoOpen: key === "show_card" ? () => autoOpenBoard(props.callId) : undefined,
+        });
         ctx.effect(
           () => ctx.slots.inject("tool.call.toolview", () => ctx.slots.register({ name: "tool.call.toolview", key }, Pinned)),
           `foodbot:toolview:${key}`,

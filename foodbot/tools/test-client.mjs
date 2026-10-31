@@ -13,7 +13,7 @@ import vm from "node:vm";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 // 最小 React：createElement 直接展开函数组件，只产树、不渲染。
-// useSyncExternalStore 直接读一次快照（本测试不测订阅时序）。
+// useSyncExternalStore 直接读一次快照（本测试不测订阅时序）；useEffect 立即执行一次。
 const React = {
   createElement(tag, props, ...children) {
     const kids = children.flat(Infinity).filter((c) => c != null && c !== false);
@@ -22,6 +22,7 @@ const React = {
   },
   Fragment: "Fragment",
   useSyncExternalStore(_subscribe, getSnapshot) { return getSnapshot(); },
+  useEffect(fn) { fn(); },
 };
 
 // ── 假宿主：slots + 右侧栏服务 + 会话事件流 ──
@@ -174,6 +175,22 @@ const boardStore = body.inject("s1");
 const boardTree = body.component({ ...boardStore, locale: "zh" });
 const boardText = text(boardTree);
 check("页签优先显示板书（标题 + 采购）", boardText.includes("今晚这桌") && boardText.includes("乌参"), boardText.slice(0, 100));
+
+// 板书自动弹侧栏：新卡弹一次、同一张不重复、普通菜卡不弹
+opened.length = 0;
+const autoProps = { phase: "result", toolName: "show_card", callId: "call-1", block: { meta: sample.board, content: [] } };
+byKey.show_card(autoProps);
+check("新板书自动打开侧栏", opened.length === 1 && opened[0] === "foodbot-board", JSON.stringify(opened));
+byKey.show_card({ ...autoProps });
+check("同一张板书不重复弹", opened.length === 1, JSON.stringify(opened));
+byKey.show_card({ ...autoProps, callId: "call-2" });
+check("新的一张板书会再弹一次", opened.length === 2, JSON.stringify(opened));
+opened.length = 0;
+byKey.recipe_get({ phase: "result", toolName: "recipe_get", callId: "call-3", block: { meta: sample.recipe, content: [] } });
+check("普通菜卡不自动弹", opened.length === 0, JSON.stringify(opened));
+opened.length = 0;
+byKey.show_card({ ...autoProps, phase: "start", callId: "call-4" });
+check("板书还没出结果时不弹", opened.length === 0, JSON.stringify(opened));
 
 for (const r of results) console.log(`${r.ok ? "PASS" : "FAIL"}  ${r.name}${r.detail ? `  — ${r.detail}` : ""}`);
 const failed = results.filter((r) => !r.ok);
