@@ -53,10 +53,6 @@ First run: tell it your tastes and restrictions (or copy an [example profile](./
 
 Recipes are fixed; cooking is flexible. A menu is an option, not a task. Ask why, never police metrics. Memory with warmth, always leave a way out.
 
-## Roadmap
-
-*Suiyuan Shidan* and more volumes to follow; the international cookbook (1,253 dishes, 50+ countries) is in.
-
 ## License
 
 Code distributed under [Apache-2.0](./LICENSE). Nutrition reference data from the [community-structured 6th edition of the China Food Composition Table](https://github.com/Sanotsu/china-food-composition-data) (factual data, with OCR-correction risk disclaimer). Recipe corpus is not distributed with this repo.

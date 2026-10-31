@@ -53,10 +53,6 @@ dsh plugin --profile desktop add ./dist/dsh-recipe-homie-<version>.tgz
 
 菜谱是固定的，烹饪是灵活的；菜单是备选，不是任务。问原因，不审判指标；记性有温度，永远留退路。
 
-## 路线图
-
-《随园食单》与更多分册待摄入；国际菜谱（1,253 种 · 50+ 国）已入册。
-
 ## 许可
 
 代码以 [Apache-2.0](./LICENSE) 分发。营养参考数据来自[《中国食物成分表》第 6 版社区结构化版](https://github.com/Sanotsu/china-food-composition-data)（事实性数据，含识图校正风险声明）。菜谱语料不随仓库分发。
