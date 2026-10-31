@@ -44,6 +44,9 @@ window.__ModuleLoader__.load({
         empty: "没有可显示的结构化结果，展开原始输出。",
         day: "第",
         dayEnd: "天",
+        pick: "挑一道",
+        kinds: "样主辅料",
+        veg: "素",
         pin: "钉到侧栏",
         boardEmptyTitle: "这桌还是空的",
         boardEmpty: "先去对话里摇一桌，或者取一道菜的详情——这里会跟着显示本会话最近出过的卡。",
@@ -78,6 +81,9 @@ window.__ModuleLoader__.load({
         empty: "No structured result; expand the raw output.",
         day: "Day ",
         dayEnd: "",
+        pick: "Pick one",
+        kinds: " kinds",
+        veg: "veg",
         pin: "Pin to sidebar",
         boardEmptyTitle: "Nothing pinned yet",
         boardEmpty: "Draw a table or open a recipe in the conversation — the cards you get will show up here.",
@@ -272,6 +278,26 @@ window.__ModuleLoader__.load({
           d.story ? h("div", { style: C.caption }, d.story) : null,
           (d.note || []).map((note, k) => h("div", { key: k, style: C.caption }, `↳ ${note}`)))),
         meta.askReason ? h("div", { style: { ...C.caption, color: "#b54708" } }, meta.hint) : h("div", { style: C.caption }, meta.hint));
+    }
+
+    /** recommend */
+    function RecommendCard(props) {
+      const meta = cardOf(props);
+      if (!meta || meta.kind !== "recommend" || !Array.isArray(meta.items)) return h(Generic, props);
+      const t = lang(props);
+      const sceneTxt = meta.scene === "hungry" ? "饿的晚上" : meta.scene === "learn" ? "学菜的晚上" : "日常晚饭";
+      return h("div", { style: C.card, "data-tool": "recommend" },
+        h("div", { style: C.head },
+          h("span", { style: C.title }, `${sceneTxt} · ${t.pick}`),
+          h("span", { style: C.sub }, `${meta.people} ${t.servings}${meta.occasion === "banquet" ? " · 宴请" : ""}`)),
+        (meta.items || []).map((d) => h("div", { key: d.id, style: C.row },
+          h("span", { style: C.role }, d.skill === "easy" ? "易" : d.skill === "hard" ? "难" : d.skill === "learn" ? "练" : ""),
+          h("div", { style: { display: "flex", flexDirection: "column", gap: "1px", flex: 1 } },
+            h("span", { style: C.dish }, d.title, d.isProtein ? null : `（${t.veg ?? "素"}）`),
+            h("span", { style: C.caption }, [d.cuisine, d.chapter, d.minutes ? `${d.minutes}${t.minutes}` : "", d.variety ? `${d.variety}${t.kinds}` : "", d.protein ? `${t.protein} ${Math.round(d.protein)}g${t.perPerson}` : ""].filter(Boolean).join(" · ")),
+            d.why ? h("span", { style: C.caption }, d.why) : null,
+            (d.note || []).map((n, k) => h("div", { key: k, style: C.caption }, `↳ ${n}`))))),
+        h("div", { style: C.caption }, meta.hint));
     }
 
     /** cook_rescue */
@@ -498,6 +524,7 @@ window.__ModuleLoader__.load({
       ["recipe_search", SearchCard],
       ["plan_week", PlanCard],
       ["menu_shuffle", ShuffleCard],
+      ["recommend", RecommendCard],
       ["cook_rescue", RescueCard],
       ["show_card", ShowCardView],
     ];

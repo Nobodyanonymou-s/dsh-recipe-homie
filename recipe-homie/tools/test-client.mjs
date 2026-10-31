@@ -78,7 +78,7 @@ const results = [];
 const check = (name, ok, detail = "") => results.push({ name, ok, detail });
 
 const toolviews = registered.filter((r) => r.name === "tool.call.toolview");
-check("注册了六个 toolview", toolviews.length === 6 && ["recipe_get", "recipe_search", "plan_week", "menu_shuffle", "cook_rescue", "show_card"].every((k) => toolviews.some((r) => r.key === k)), toolviews.map((r) => r.key).join(","));
+check("注册了七个 toolview", toolviews.length === 7 && ["recipe_get", "recipe_search", "plan_week", "menu_shuffle", "recommend", "cook_rescue", "show_card"].every((k) => toolviews.some((r) => r.key === k)), toolviews.map((r) => r.key).join(","));
 
 // 把渲染树压成纯文本，便于断言
 function text(node) {
@@ -103,6 +103,7 @@ const sample = {
   plan: { kind: "plan", days: 2, people: 3, energy: "normal", menu: [{ day: 1, meals: [{ name: "晚", protein: 35, kcal: 600, dishes: [{ id: "x", title: "清蒸鳊鱼", minutes: 25, note: ["孩子那份先盛出来"] }] }] }], shopping: { buyOnce: [{ name: "鳊鱼", qty: "750 g" }], batches: [{ label: "第一批", items: [{ name: "青菜", qty: "300 g" }] }], staples: [], selfMade: [], keep: [] }, notes: ["排了你之前说想吃的"] },
   shuffle: { kind: "shuffle", people: 2, combo: "1菜1肉", rerollCount: 1, dishes: [{ id: "y", title: "油焖春笋", cuisine: "浙江", minutes: 20, protein: 3 }], hint: "可以再摇一次", askReason: false },
   rescue: { kind: "rescue", dishes: ["黄埔炒蛋（约15分钟，4人份）"], fallback: "或者干脆不做" },
+  recommend: { kind: "recommend", scene: "hungry", people: 2, occasion: "daily", items: [{ id: "上海-151", title: "韭芽拌蛋皮", cuisine: "上海", chapter: "禽蛋菜类", minutes: 25, variety: 3, protein: 7, skill: "easy", isProtein: true, why: "25 分钟能上桌，3 样主辅料", main: ["鸡蛋", "韭黄"], note: [] }], hint: "三道里挑一道" },
   board: { kind: "board", title: "今晚这桌", dishes: [{ kind: "recipe", id: "上海-001", title: "冰糖元蹄", cuisine: "上海", chapter: "肉菜类", page: 3, minutes: 50, servings: 5, protein: 24.8, kcal: 400, ingredients: [{ name: "猪蹄膀", amount: "一只", grams: 750 }], steps: ["焯水", "炖"], features: "酥烂", notes: [] }], shopping: [{ group: "一次买", name: "乌参", qty: "1 条", note: "提前泡发" }], notes: ["提前一天泡发"] },
 };
 
@@ -112,6 +113,7 @@ const cases = [
   ["recipe_search", "search", "四方扣肉"],
   ["plan_week", "plan", "清蒸鳊鱼"],
   ["menu_shuffle", "shuffle", "油焖春笋"],
+  ["recommend", "recommend", "韭芽拌蛋皮"],
   ["cook_rescue", "rescue", "黄埔炒蛋"],
   ["show_card", "board", "今晚这桌"],
 ];

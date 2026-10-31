@@ -1,10 +1,9 @@
 # 作为 bundle 安装时（pnpm add 进 profile）由这一层挂载。
 # 直接以文件路径挂载时，改用 profile 的 cordis.patch.yml 里同名的 insert 条目。
+# dataDir 指向你自建的完整数据目录（含 recipes.processed.jsonl，需自备书源 build → integrate 重建）；
+# 不配置时用包内默认路径——开箱请先用 data-sample 抽样库验证安装。
 - insert:
     - id: recipe-homie
       name: "dsh-recipe-homie"
       config:
-        # 指向工作区里那棵活的 data/（不是安装包里的快照）：
-        # 重建库后下一次查询就生效，不用重新打包。profile.json / user-state.json 也在这里。
-        dataDir: "C:/Users/70944/Documents/Projects/美食bot/foodbot/data"
         limit: 8

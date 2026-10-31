@@ -71,6 +71,13 @@ for (let i = 0; i < 3; i++) {
   reroll++;
 }
 
+console.log("\n=== recommend（固定 3 候选 + 换一批不重复）");
+const rec = await callRaw("recommend", { scene: "hungry", people: 2 });
+console.log(rec.text);
+const rec2 = await callRaw("recommend", { scene: "hungry", people: 2, excludeIds: rec.value.excludeIds });
+const prevIds = new Set(rec.value.candidates.map((d) => d.id));
+console.log(`换一批：${rec2.value.candidates.map((d) => d.title).join("/")}（${rec2.value.candidates.every((d) => !prevIds.has(d.id)) ? "不重复" : "重复了！"}）`);
+
 console.log("\n=== 边界：不存在的菜 / 空搜索");
 console.log(await call("recipe_get", { title: "没有这道菜" }));
 console.log(await call("recipe_search", { ingredients: ["不存在的食材xyz"] }));
@@ -81,6 +88,7 @@ for (const [name, args] of [
   ["recipe_search", { ingredients: ["五花肉"], limit: 3 }],
   ["plan_week", { days: 2, people: 3, meals: 1, seed: 7 }],
   ["menu_shuffle", { people: 2, seed: 5 }],
+  ["recommend", { scene: "daily", people: 2 }],
   ["cook_rescue", {}],
 ]) {
   const { meta } = await callRaw(name, args);

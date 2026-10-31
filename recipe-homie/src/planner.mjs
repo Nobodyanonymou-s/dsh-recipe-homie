@@ -83,6 +83,68 @@ export function isFungiBamboo(r) {
   return (r.vegCanon ?? []).some((x) => FUNGI.has(x) || FUNGI_RE.test(x) || BAMBOO_RE.test(x));
 }
 
+// ───────── R19 食材种类预算（2026-10-31 用户补充） ─────────
+// 选菜不只看时间/难度/蛋白，还看「这桌要洗切多少种东西、买回来能不能一顿用完」。
+// 种类数是主变量、与人数反相关：人少（1–2 人日常）强约束——主辅料种类少，同一种料
+// 用量可以多（剩的是同一件东西，好保存），避免「每样用一点、剩一包」；人多或宴请
+// 降为次要——种类可以多，分量反而不是问题。计数只算主辅料（蔬菜/肉/水产/菌菇/干货/
+// 蛋奶/豆制品这类要洗切采购的），调料粮油不计。软约束：只调排序不筛池子——阈值按
+// 全库分布定（p50=4 / p75=6 / p90=8），cap 不超过 p90，池子不会被压空。
+const NON_VARIETY_CATS = new Set(["调味", "粮油", "油脂", "汤底", "其他"]);
+
+/** 一道菜的主辅料种类数（按 canon 去重；调料/粮油/油脂/汤底不计）。 */
+export function varietyCount(r) {
+  const seen = new Set();
+  for (const i of r.ingredients ?? []) {
+    if (i.canon && !NON_VARIETY_CATS.has(i.cat)) seen.add(i.canon);
+  }
+  return seen.size;
+}
+
+/** 种类预算：人数少预算紧、宴请完全放开。tight = 人少的强约束档（极简菜给一点正向倾斜）。 */
+export function varietyBudget(people, occasion = "daily") {
+  if (occasion === "banquet") return { cap: Infinity, weight: 0, tight: false };
+  if (people <= 2) return { cap: 5, weight: 0.9, tight: true };
+  if (people <= 4) return { cap: 7, weight: 0.5, tight: false };
+  return { cap: 9, weight: 0.3, tight: false };
+}
+
+/** 软惩罚（只影响排序，不挡菜）：超预算按超出量×强度扣；tight 档下极简菜加分。 */
+export function varietyAdjust(count, budget) {
+  if (Number.isFinite(budget.cap) && count > budget.cap) return -(count - budget.cap) * budget.weight;
+  if (budget.tight && count <= 3) return 0.4;
+  return 0;
+}
+
+/** 按种类预算重排一个池子（在副本上调 score，不动 scored 缓存；item 附带 variety 供输出）。 */
+function rankWithVariety(pool, vBudget) {
+  return pool
+    .map((x) => {
+      const variety = varietyCount(x.r);
+      return { ...x, variety, score: x.score + varietyAdjust(variety, vBudget) };
+    })
+    .sort((a, b) => b.score - a.score);
+}
+
+/** R20 的「为什么推它」：事实（时间/种类数/蛋白）+ 打分理由（画像/口味/技能）+ 记性，拼成一句人话。
+ *  确定性：只从数据字段来，同一候选永远同一句。蛋白信息只说一遍——打分理由带评价（达标/接近）时用理由，否则用事实。 */
+function whyText(x, scene) {
+  const bits = [];
+  const reasons = x.reasons ?? [];
+  if (Number.isFinite(x.minutes)) bits.push(scene === "hungry" ? `${x.minutes} 分钟能上桌` : `约 ${x.minutes} 分钟`);
+  bits.push(`${x.variety} 样主辅料`);
+  const proteinReason = reasons.find((t) => t.startsWith("蛋白"));
+  if (proteinReason) bits.push(proteinReason);
+  else if (Number.isFinite(x.r.perServing?.proteinGrams)) bits.push(`蛋白 ${Math.round(x.r.perServing.proteinGrams)}g/人`);
+  for (const t of reasons) {
+    if (t === proteinReason || bits.length >= 4) continue;
+    bits.push(t);
+  }
+  if (x.isWant) bits.push("你念叨过想吃");
+  if (!bits.length) bits.push(String(x.r.features ?? "").slice(0, 40) || "家常好上手");
+  return bits.filter(Boolean).join("，");
+}
+
 const COMBOS = {
   "1菜1肉": [{ role: "protein", n: 1 }, { role: "veg", n: 1 }],
   "2菜1肉": [{ role: "protein", n: 1 }, { role: "veg", n: 2 }],
@@ -314,6 +376,8 @@ export class Planner {
     // 精力/意图档位：太累只做 35 分钟内好上手的；想学菜放开学着做的（优先级见 resolveRunBudget）
     const { intent, energy, maxMinutes, tiers } = resolveRunBudget(opts, this.c.allowTiers);
     const pools = this.pools({ maxMinutes, tiers });
+    // R19 种类预算：按人数/场合缩放的软约束，只改选菜顺序不删菜（宴请放开）
+    const vBudget = varietyBudget(people, opts.occasion === "banquet" ? "banquet" : "daily");
     const isSturdyAll = (r) => {
       const v = r.vegCanon ?? [];
       return v.length > 0 && v.every((x) => STURDY.has(x));
@@ -344,9 +408,9 @@ export class Planner {
       return null;
     };
 
-    const proteinPool = [...pools.protein];
-    const vegPool = [...pools.veg];
-    const soupPool = [...pools.soup];
+    const proteinPool = rankWithVariety(pools.protein, vBudget);
+    const vegPool = rankWithVariety(pools.veg, vBudget);
+    const soupPool = rankWithVariety(pools.soup, vBudget);
 
     for (let d = 0; d < days; d++) {
       const day = { day: d + 1, meals: [] };
@@ -536,6 +600,7 @@ export class Planner {
             kcalPerServing: x.r.perServing?.kcal,
             minutes: x.minutes,
             hasMeat: (x.r.ingredients ?? []).some((i) => MEAT_PARENTS.has(i.parent)),
+            variety: x.variety ?? varietyCount(x.r), // R19：主辅料种类数（补蛋白的 side 位没过 rankWithVariety，兜底现算）
             isWant: Boolean(x.isWant),
             recentDays: x.recentDays,
             omit: (x.omit ?? []).slice(0, 4),
@@ -584,6 +649,13 @@ export class Planner {
     const { intent, energy, maxMinutes, tiers } = resolveRunBudget(opts, this.c.allowTiers);
     const rnd = mulberry32(seed);
     const pools = this.pools({ maxMinutes, tiers });
+    // R19：摇桌与规划共用同一份种类预算（人少偏种类少的菜，宴请放开）
+    const vBudget = varietyBudget(people, opts.occasion === "banquet" ? "banquet" : "daily");
+    const ranked = {
+      protein: rankWithVariety(pools.protein, vBudget),
+      veg: rankWithVariety(pools.veg, vBudget),
+      soup: rankWithVariety(pools.soup, vBudget),
+    };
     const exclude = new Set(opts.excludeIds ?? []);
     const picks = [];
 
@@ -598,9 +670,9 @@ export class Planner {
 
     for (const spec of combo) {
       for (let i = 0; i < (spec.n ?? 1); i++) {
-        if (spec.role === "protein") take(pools.protein, "protein");
-        else if (spec.role === "veg") take(pools.veg, "veg");
-        else take(pools.soup, "soup");
+        if (spec.role === "protein") take(ranked.protein, "protein");
+        else if (spec.role === "veg") take(ranked.veg, "veg");
+        else take(ranked.soup, "soup");
       }
     }
 
@@ -620,6 +692,7 @@ export class Planner {
         skill: p.r.skill,
         minutes: p.minutes,
         hasMeat: (p.r.ingredients ?? []).some((i) => MEAT_PARENTS.has(i.parent)),
+        variety: p.variety ?? varietyCount(p.r), // R19：主辅料种类数
         isWant: Boolean(p.isWant),
         recentDays: p.recentDays,
         omit: (p.omit ?? []).slice(0, 4),
@@ -638,6 +711,113 @@ export class Planner {
       hint: rerollCount === 0
         ? "不满意可以再摇一次，摇过的菜不会再来烦你。"
         : "这是这局最后一次摇了。还不合心意就跟我说说为什么，咱们换个思路，不硬摇。",
+    };
+  }
+
+  /**
+   * R20 推荐是一等工具：固定 3 个候选、每道带「为什么推它」，确定性（同一请求同一结果，不掺随机）。
+   * 排序依次遵守：画像硬约束（scored 池准入已挡）→ 场景/精力（resolveRunBudget 的时间与难度档）
+   * → R19 种类预算（软惩罚）→ 长期喜好（score 本体）。候选之间要有差异：主技法或蛋白来源不同。
+   * 它不消耗随机挑战的两次机会——menu_shuffle 是「不想想」的随机收敛，这个是「给你选」。
+   * @param {{scene?:"hungry"|"daily"|"learn", people?:number, energy?:string, maxMinutes?:number, occasion?:"daily"|"banquet", excludeIds?:string[], intent?:string}} opts
+   */
+  recommend(opts = {}) {
+    if (!this.c) this.refresh();
+    const people = opts.people ?? this.people;
+    const scene = opts.scene === "hungry" || opts.scene === "learn" ? opts.scene : "daily";
+    const { intent, energy, maxMinutes, tiers } = resolveRunBudget(
+      { ...opts, intent: opts.intent ?? (scene === "hungry" ? "fast" : scene === "learn" ? "learn" : null) },
+      this.c.allowTiers,
+    );
+    const occasion = opts.occasion === "banquet" ? "banquet" : "daily";
+    const vBudget = varietyBudget(people, occasion);
+    const exclude = new Set(opts.excludeIds ?? []);
+    const pools = this.pools({ maxMinutes, tiers });
+    const ranked = rankWithVariety([...pools.protein, ...pools.veg, ...pools.side], vBudget)
+      .filter((x) => !exclude.has(x.r.id))
+      .filter((x) => !/甜菜/.test(x.r.chapter ?? "")); // 甜菜守卫同款：甜品不当正餐候选
+
+    // 多样性锚点：主技法 + 蛋白来源（素菜回退蔬菜主料的 parent）
+    const methodOf = (r) => (r.methods ?? [])[0] ?? null;
+    const sourceOf = (r) => {
+      const main = (r.proteinCanon ?? [])[0];
+      const ing = main ? (r.ingredients ?? []).find((i) => i.canon === main) : null;
+      if (ing?.parent) return ing.parent;
+      const veg = (r.vegCanon ?? [])[0];
+      const ving = veg ? (r.ingredients ?? []).find((i) => i.canon === veg) : null;
+      return ving?.parent ?? veg ?? null;
+    };
+    const anchors = (x) => ({ m: methodOf(x.r), s: sourceOf(x.r) });
+    const pickedAnchors = [];
+    const picks = [];
+    // 两档多样性：先要「蛋白来源与已选全不同」（用户感知的雷同主要来自同一种肉），
+    // 池子撑不起再退到「技法或来源至少差一项」——R20 的底线。
+    const takeDiverse = (candidates) => {
+      for (const strict of [true, false]) {
+        for (const x of candidates) {
+          if (picks.some((p) => p.r.id === x.r.id)) continue;
+          const a = anchors(x);
+          if (pickedAnchors.some((p) => (strict ? p.s === a.s : p.m === a.m && p.s === a.s))) continue;
+          picks.push(x);
+          pickedAnchors.push(a);
+          return true;
+        }
+      }
+      return false;
+    };
+    // 第 1 候选压轴：吃饭场景先给一道荤（今晚吃什么的默认直觉），学菜场景先给一道要练的
+    if (scene === "learn") takeDiverse(ranked.filter((x) => x.r.skill?.tier !== "easy"));
+    else takeDiverse(ranked.filter((x) => this.isProteinDish(x.r)));
+    while (picks.length < 3 && takeDiverse(ranked)) { /* 凑满 3 个 */ }
+    // 池子撑不起严格多样性时放宽补位（不足 3 是数据现实，由 hint 说破，不装满）
+    for (const x of ranked) {
+      if (picks.length >= 3) break;
+      if (!picks.some((p) => p.r.id === x.r.id)) picks.push(x);
+    }
+
+    const thin = picks.length > 0 && picks.length < 3;
+    const n = picks.length;
+    const hint = !picks.length
+      ? {
+        code: "empty",
+        text: `按现在的条件（${scene === "hungry" ? "饿的晚上 · 35 分钟内" : scene === "learn" ? "学菜的晚上" : "日常"}${Number.isFinite(maxMinutes) ? ` · ${maxMinutes} 分钟内` : ""}）没有能同时过画像和时间的菜。要么放宽一下（说句「今天不赶时间」），要么用 profile_show 看看是不是忌口把范围压太窄了；实在不想想就摇一桌（menu_shuffle），累了也有退路（cook_rescue）。`,
+      }
+      : {
+        code: thin ? "thin" : "ok",
+        text: [
+          thin ? `符合条件的菜不多，先给这 ${n} 道。挑中就报菜名或 id，我给你出完整做法和要买的东西。` : "三道里挑一道，挑中就报菜名或 id，我给你出完整做法和要买的东西。",
+          `都不合意就说一声，我按这个路子再换一批（这 ${n} 道不会重复出现）；今天都不想做也行，菜单是备选不是任务。`,
+        ].join(""),
+      };
+
+    return {
+      scene,
+      occasion,
+      people,
+      energy,
+      maxMinutes: Number.isFinite(maxMinutes) ? maxMinutes : null,
+      intent: intent ?? null,
+      candidates: picks.map((x) => ({
+        id: x.r.id,
+        title: x.r.title,
+        cuisine: x.r.cuisine,
+        chapter: x.r.chapter ?? "",
+        book: x.r.book,
+        page: x.r.page ?? null,
+        minutes: x.minutes,
+        tier: x.r.skill?.tier ?? null,
+        variety: x.variety,
+        proteinPerServing: x.r.perServing?.proteinGrams ?? null,
+        kcalPerServing: x.r.perServing?.kcal ?? null,
+        servings: x.r.servingsBase ?? null,
+        mainIngredients: (x.r.mainCanon ?? []).slice(0, 4),
+        isProtein: this.isProteinDish(x.r),
+        why: whyText(x, scene),
+        omit: (x.omit ?? []).slice(0, 4),
+        blurb: x.r.blurb ?? "",
+      })),
+      excludeIds: [...exclude, ...picks.map((x) => x.r.id)],
+      hint,
     };
   }
 }

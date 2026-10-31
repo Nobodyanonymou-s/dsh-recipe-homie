@@ -1,6 +1,6 @@
 {
   "name": "dsh-recipe-homie",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "license": "Apache-2.0",
   "type": "module",
   "description": "DSH 里的中国菜谱插件：正派菜谱检索、按人排菜单、采购清单、随机挑战 / Chinese-cooking plugin for DSH",

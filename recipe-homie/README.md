@@ -13,7 +13,7 @@
 
 插件和查询层按 mtime 自动读最新的数据文件，重建库不必重启宿主。
 
-## 九个工具
+## 十个工具
 
 | 工具 | 干什么 |
 |---|---|
@@ -24,10 +24,13 @@
 | `cook_log` | 记一顿真做过的饭：好吃 / 还行 / 别再做了，以及剩了什么 |
 | `plan_week` | 排 1–7 天菜单 + 采购清单；每天末尾给当日合计（蛋白/热量对着天级目标）；支持精力档位、`intent: fast/learn`、自动扣冰箱剩料 |
 | `menu_shuffle` | 随机挑战：按画像筛范围后摇一桌；一局只有两次机会，用完转「问原因」 |
+| `recommend` | 推荐是一等工具：固定 3 个候选让用户挑，每道带「为什么推它」、时间、主辅料种类数、蛋白/人；候选间技法或蛋白来源有差异；同一请求结果稳定，不占摇的次数 |
 | `cook_rescue` | 太累/太晚/不想动时的退路：三道半小时内、有蛋白、少预制依赖的菜，外加「不做也行」 |
 | `show_card` | 把定好的一桌压成一张「板书」卡片，可钉在右侧栏当菜谱/采购清单用 |
 
-`plan_week` / `menu_shuffle` / `recipe_search` 都接受 `intent: "fast" | "learn"`：`fast` = 饿的晚上（≤35 分钟、好上手）；`learn` = 学菜的晚上（时间上限 180 分钟、放开 learn 档，hard 档仍要画像允许）。优先级：显式 `maxMinutes` > `energy` > `intent`。
+`plan_week` / `menu_shuffle` / `recipe_search` 都接受 `intent: "fast" | "learn"`：`fast` = 饿的晚上（≤35 分钟、好上手）；`learn` = 学菜的晚上（时间上限 180 分钟、放开 learn 档，hard 档仍要画像允许）。优先级：显式 `maxMinutes` > `energy` > `intent`。`recommend` 的 `scene: "hungry" | "daily" | "learn"` 与之同义。
+
+**食材种类预算（人少不铺张）**：`plan_week` / `menu_shuffle` / `recommend` 都按人数缩放「主辅料种类数」的软预算——1–2 人日常偏种类少的菜（同一种料用量可以多，剩的是同一件东西，好保存），5 人以上或 `occasion: "banquet"` 放开；只数主辅料（蔬菜/肉/水产/菌菇/干货/蛋奶/豆制品），调料粮油不计；只调排序不筛池子。
 
 ## 工具契约（三层）
 

@@ -506,6 +506,9 @@ const TRAVERSAL = [
   { label: "cook_log", tool: "cook_log", args: { title: "冰糖元蹄", verdict: "loved", people: 2, leftovers: [{ name: "五花肉", grams: 200 }] }, registry: "easy" },
   { label: "plan_week", tool: "plan_week", args: { days: 2, people: 3, meals: 1, seed: 7 }, registry: "easy" },
   { label: "menu_shuffle", tool: "menu_shuffle", args: { people: 2, seed: 5 }, registry: "easy" },
+  { label: "recommend·ok", tool: "recommend", args: { scene: "hungry", people: 2 }, registry: "easy" },
+  { label: "recommend·learn", tool: "recommend", args: { scene: "learn", people: 3 }, registry: "easy" },
+  { label: "recommend·empty", tool: "recommend", args: { scene: "daily", people: 2, maxMinutes: 1 }, registry: "easy" },
   { label: "cook_rescue", tool: "cook_rescue", args: { people: 2 }, registry: "easy" },
   { label: "show_card", tool: "show_card", args: { title: "今晚这桌", dishes: ["江苏-112"], shopping: [{ group: "一次买", name: "乌参", qty: "1 条", note: "提前泡发" }], notes: ["提前一天泡发"] }, registry: "easy" },
   { label: "show_card·miss", tool: "show_card", args: { dishes: ["不存在-9"] }, registry: "easy" },
@@ -530,7 +533,17 @@ async function getTraversal() {
   return traversal;
 }
 
-// ───────── 12 条用例 ─────────
+/** 过敏 fixture（R20 验收用）：虾/蟹 → 甲壳类硬约束，与 R10 同口径——摇出来/推出来都不得含。 */
+function getAllergy() {
+  if (!registries.has("allergy")) {
+    const profile = structuredClone(DEFAULT_PROFILE);
+    profile.longTerm.allergies = [{ target: "虾", allergen: "甲壳类" }, { target: "蟹", allergen: "甲壳类" }];
+    makeRegistry("allergy", profile, structuredClone(DEFAULT_STATE));
+  }
+  return registries.get("allergy");
+}
+
+// ───────── 用例 ─────────
 async function runAll() {
   await runCase(1, "recipe_search { q:'佛跳墙' }：不抛错、hits 空、hint 可执行、render 说清「没有」+ 覆盖范围", async (t) => {
     const e = await exec(getEasy(), "recipe_search", { q: "佛跳墙" }, "search(q=佛跳墙)");
@@ -767,6 +780,78 @@ async function runAll() {
       t.check("坏 id：found=false 且 presentationMeta === null（不发空卡）", miss.value?.found === false && miss.meta === null, safeJson({ found: miss.value?.found, meta: miss.meta }));
       t.check("坏 id：render 说没找到", miss.text.includes("没找到"), miss.text.slice(0, 120));
     }
+  });
+
+  await runCase(14, "recommend（R20）：同一请求稳定 3 候选、每道带理由与种类数、候选间有差异、画像硬约束不漏", async (t) => {
+    const book = new RecipeBook(TMP);
+    const e = await exec(getEasy(), "recommend", { scene: "hungry", people: 2 }, "recommend(hungry,2)");
+    checkEntry(t, e);
+    if (e.error) return;
+    const v = e.value;
+    t.check("hint.code === 'ok'", v?.hint?.code === "ok", `实际 ${safeJson(v?.hint?.code)}`);
+    t.check("固定 3 个候选", v?.candidates?.length === 3, `实际 ${v?.candidates?.length}`);
+    for (const d of v?.candidates ?? []) {
+      t.check(`${d.title}：why 是非空人话`, typeof d.why === "string" && d.why.trim().length > 0, `实际 ${describeValue(d.why)}`);
+      t.check(`${d.title}：minutes 有限`, Number.isFinite(d.minutes), `实际 ${describeValue(d.minutes)}`);
+      t.check(`${d.title}：variety 是 ≥1 整数（R19 种类数）`, Number.isInteger(d.variety) && d.variety >= 1, `实际 ${describeValue(d.variety)}`);
+      t.check(`${d.title}：mainIngredients 是数组`, Array.isArray(d.mainIngredients), `实际 ${describeValue(d.mainIngredients)}`);
+      t.check(`${d.title}：proteinPerServing 为 number|null`, d.proteinPerServing === null || Number.isFinite(d.proteinPerServing), `实际 ${describeValue(d.proteinPerServing)}`);
+      t.check(`${d.title}：id 可回查`, typeof d.id === "string" && Boolean(book.get(d.id)), `实际 ${describeValue(d.id)}`);
+    }
+    // 确定性：同一请求同一结果（不掺随机）——R20 验收第一条
+    const again = await exec(getEasy(), "recommend", { scene: "hungry", people: 2 }, "recommend(again)");
+    t.check("同一请求两次结果一致", deepEqual(v?.candidates, again.value?.candidates), "两次 candidates 不一致");
+    // 互不雷同：主技法或蛋白来源两两有差异（锚点定义与 planner.recommend 同口径）
+    const anchorsOf = (r) => ({
+      m: (r.methods ?? [])[0] ?? null,
+      s: (() => {
+        const main = (r.proteinCanon ?? [])[0];
+        const ing = main ? (r.ingredients ?? []).find((i) => i.canon === main) : null;
+        if (ing?.parent) return ing.parent;
+        const veg = (r.vegCanon ?? [])[0];
+        const ving = veg ? (r.ingredients ?? []).find((i) => i.canon === veg) : null;
+        return ving?.parent ?? veg ?? null;
+      })(),
+    });
+    const as_ = (v?.candidates ?? []).map((d) => anchorsOf(book.get(d.id))).filter((a) => a);
+    let pairwiseOk = true;
+    let pairDetail = "";
+    for (let i = 0; i < as_.length; i++) {
+      for (let j = i + 1; j < as_.length; j++) {
+        if (as_[i].m === as_[j].m && as_[i].s === as_[j].s) {
+          pairwiseOk = false;
+          pairDetail = `${v.candidates[i].title} vs ${v.candidates[j].title}（${safeJson(as_[i])}）`;
+        }
+      }
+    }
+    t.check("候选两两「技法或蛋白来源」有差异", pairwiseOk, pairDetail);
+    const metaOk = checkMeta(t, e);
+    if (metaOk) t.check("presentationMeta.kind === 'recommend'", e.meta?.kind === "recommend", `实际 ${safeJson(e.meta?.kind)}`);
+
+    // 换一批：excludeIds 传回 → 不重复且仍给 3 个
+    const next = await exec(getEasy(), "recommend", { scene: "hungry", people: 2, excludeIds: v.excludeIds }, "recommend(换一批)");
+    const prevIds = new Set(v.candidates.map((d) => d.id));
+    t.check("换一批不重复上一轮", (next.value?.candidates ?? []).every((d) => !prevIds.has(d.id)) && next.value.candidates.length === 3, safeJson(next.value?.candidates?.map((d) => d.id)));
+
+    // 画像硬约束（R10 同口径）：虾/蟹过敏 fixture 下，候选不得含过敏原/忌口 canon/标题防御词
+    const a = await exec(getAllergy(), "recommend", { scene: "daily", people: 2 }, "recommend(过敏fixture)");
+    checkEntry(t, a);
+    let leak = "";
+    for (const d of a.value?.candidates ?? []) {
+      const r = book.get(d.id);
+      if (!r) continue;
+      if ((r.allergens ?? []).includes("甲壳类")) leak = `${d.id} allergens 标甲壳类`;
+      if ((r.ingredients ?? []).some((i) => i.canon === "虾" || i.canon === "蟹")) leak = `${d.id} 含虾/蟹 canon`;
+      if (/虾|蟹/.test(r.title ?? "")) leak = `${d.id} 标题含虾/蟹`;
+    }
+    t.check("过敏 fixture：候选无虾/蟹泄漏", !leak && (a.value?.candidates?.length ?? 0) > 0, leak || "候选为空");
+    t.note(`easy:${v?.candidates?.map((d) => d.title).join("/")}；过敏fixture:${a.value?.candidates?.map((d) => d.title).join("/")}`);
+
+    // empty 分支（R20 与搜索 no_hit 同口径：不发空卡，hint 给退路）
+    const emp = await exec(getEasy(), "recommend", { scene: "daily", people: 2, maxMinutes: 1 }, "recommend(empty)");
+    checkEntry(t, emp);
+    t.check("empty 分支：candidates 为空且 hint.code === 'empty'", emp.value?.candidates?.length === 0 && emp.value?.hint?.code === "empty", safeJson({ n: emp.value?.candidates?.length, code: emp.value?.hint?.code }));
+    t.check("empty 分支：presentationMeta === null（不发空卡）", emp.meta === null, `实际 ${safeJson(emp.meta)}`);
   });
 }
 

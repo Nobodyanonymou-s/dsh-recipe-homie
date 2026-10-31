@@ -1,7 +1,7 @@
 /**
  * DSH 插件入口。
  *
- * 工具只做四件事：查菜谱、看/改画像、排周期菜单、随机摇一桌。
+ * 工具只做五件事：查菜谱、看/改画像、排周期菜单、随机摇一桌、推荐三个候选。
  * 不碰 UI、不联网；所有状态都是本地文件（data/ 与 profile.json）。
  *
  * 契约（v0.2）：每个工具 = 结构化 canonical value + render（给模型的人话）+ presentationMeta（给浏览器的卡片）。
@@ -11,7 +11,7 @@
  *   - 零命中是正常的领域结果（hits: [] + hint），不是错误。
  *
  * 行为约定（写给调用我的模型看）：
- *   - 用户说"随便" → menu_shuffle，别自己编菜
+ *   - 用户说"随便" → menu_shuffle，别自己编菜；说"给我挑几个/推荐一下" → recommend（固定 3 个，不占摇的次数）
  *   - 摇两次还不满意 → 停下来问原因，不要摇第三次
  *   - 用户提到的"最近/这个月/孕期/减脂"进 periods（有窗口），"一直不喜欢"进 longTerm
  *   - 排菜单的采购清单是给人看的，不是给机器看的：不要改单位、不要合并批次
@@ -311,6 +311,25 @@ function formatShuffle(r) {
   return lines.join("\n");
 }
 
+/** recommend 的 render（R20）：固定 3 个候选，每道「为什么推它」+ 主料 + 种类数/蛋白；
+ *  结尾给下一步（选定 → recipe_get / show_card），不消耗随机挑战的次数。 */
+function formatRecommend(v) {
+  if (!v.candidates.length) return [{ type: "text", text: v.hint.text }];
+  const sceneTxt = v.scene === "hungry" ? "饿的晚上" : v.scene === "learn" ? "学菜的晚上" : "日常晚饭";
+  const occTxt = v.occasion === "banquet" ? " · 宴请" : "";
+  const lines = [`${sceneTxt} · ${v.people} 人${occTxt} · 挑一道${Number.isFinite(v.maxMinutes) ? `（${v.maxMinutes} 分钟内）` : ""}`];
+  v.candidates.forEach((d, i) => {
+    lines.push(`${i + 1}. ${d.title}（${d.cuisine}${d.chapter ? `·${d.chapter}` : ""}）${d.isProtein ? "" : "（素）"}——${d.why}`);
+    const main = d.mainIngredients.length ? d.mainIngredients.join("、") : "—";
+    lines.push(`   主料：${main}${d.servings ? ` · 原方 ${d.servings} 人份` : ""} · id=${d.id}`);
+    const omit = omitLine(d.omit, "   ");
+    if (omit) lines.push(omit);
+  });
+  lines.push("");
+  lines.push(v.hint.text);
+  return [{ type: "text", text: lines.join("\n") }];
+}
+
 /** cook_rescue 的 render。0.4.1 裁决 7（E1 Q7）：文案与实际过滤分钟数一致——过滤 ≤30 分钟。 */
 function formatRescue(v) {
   const lines = ["今天不做大餐就不做，这不是欠账。"];
@@ -482,6 +501,31 @@ export function cardRescue(dishes, fallback) {
     kind: "rescue",
     dishes: top(dishes, 4).map((d) => ({ name: d, })).map((x) => x.name),
     fallback: clip(fallback, 160),
+  };
+}
+
+export function cardRecommend(v) {
+  return {
+    kind: "recommend",
+    scene: v.scene,
+    people: v.people,
+    occasion: v.occasion ?? "daily",
+    items: top(v.candidates, 3).map((d) => ({
+      id: d.id,
+      title: d.title,
+      cuisine: d.cuisine,
+      chapter: d.chapter ?? "",
+      minutes: d.minutes,
+      variety: d.variety,
+      protein: d.proteinPerServing ?? null,
+      kcal: d.kcalPerServing ?? null,
+      skill: d.tier ?? null,
+      isProtein: Boolean(d.isProtein),
+      why: clip(d.why, 100),
+      main: top(d.mainIngredients, 4),
+      note: top(d.omit, 2).map((o) => `免${o.target}版：省去 ${o.target}（约 ${Math.round(o.grams ?? 0)} g）`),
+    })),
+    hint: clip(v.hint.text, 200),
   };
 }
 
@@ -694,6 +738,59 @@ const showCardSchema = {
 
 const objectSchema = { type: "object", additionalProperties: true };
 const stringSchema = { type: "string" };
+
+// R20 recommend 的候选与返回值。固定 3 个候选（池子撑不起时如实少于 3，由 hint 说破）
+const recommendCandidateSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string" },
+    title: { type: "string" },
+    cuisine: { type: "string" },
+    chapter: { type: "string" },
+    book: { type: "string" },
+    page: nullableNumber,
+    minutes: { type: "number" },
+    tier: nullableString,
+    variety: { type: "integer" },
+    proteinPerServing: nullableNumber,
+    kcalPerServing: nullableNumber,
+    servings: nullableNumber,
+    mainIngredients: { type: "array", items: { type: "string" } },
+    isProtein: { type: "boolean" },
+    why: { type: "string" },
+    omit: { type: "array", items: omitItemSchema },
+    blurb: { type: "string" },
+  },
+  required: ["id", "title", "cuisine", "chapter", "book", "page", "minutes", "tier", "variety", "proteinPerServing", "kcalPerServing", "servings", "mainIngredients", "isProtein", "why", "omit", "blurb"],
+  additionalProperties: false,
+};
+
+const recommendHintSchema = {
+  type: "object",
+  properties: {
+    code: { type: "string", enum: ["ok", "thin", "empty"] },
+    text: { type: "string" },
+  },
+  required: ["code", "text"],
+  additionalProperties: false,
+};
+
+const recommendSchema = {
+  type: "object",
+  properties: {
+    scene: { type: "string", enum: ["hungry", "daily", "learn"] },
+    occasion: { type: "string", enum: ["daily", "banquet"] },
+    people: { type: "integer" },
+    energy: { type: "string" },
+    maxMinutes: nullableNumber,
+    intent: nullableString,
+    candidates: { type: "array", items: recommendCandidateSchema },
+    excludeIds: { type: "array", items: { type: "string" } },
+    hint: recommendHintSchema,
+  },
+  required: ["scene", "occasion", "people", "energy", "maxMinutes", "intent", "candidates", "excludeIds", "hint"],
+  additionalProperties: false,
+};
 
 function profileSummary(profile, presets, state = null) {
   const lt = profile.longTerm ?? {};
@@ -1271,6 +1368,7 @@ export function registerTools(ctx, config = {}) {
         seed: { type: "integer", description: "想复现同一张菜单时传上次的 seed。" },
         withShopping: { type: "boolean", description: "是否附采购清单，默认 true。" },
         intent: { type: "string", enum: ["fast", "learn"], description: "fast=饿的晚上，快、家常、35 分钟内；learn=学菜的晚上，可以挑战硬菜/考据。" },
+        occasion: { type: "string", enum: ["daily", "banquet"], description: "日常默认（人少时候选偏向主辅料种类少的菜，一顿能用完）；宴请放开种类预算、分量不设限。" },
       },
       additionalProperties: false,
     },
@@ -1285,6 +1383,7 @@ export function registerTools(ctx, config = {}) {
         combo: args.combo,
         seed: args.seed,
         intent: args.intent,
+        occasion: args.occasion,
       });
       c.savePlan(result);
       return result;
@@ -1319,6 +1418,7 @@ export function registerTools(ctx, config = {}) {
         rerollCount: { type: "integer", description: "已经摇过几次，默认 0。>=2 会直接 closed。" },
         seed: { type: "integer", description: "可选，指定后结果可复现。" },
         intent: { type: "string", enum: ["fast", "learn"], description: "fast=饿的晚上，快、家常、35 分钟内；learn=学菜的晚上，可以挑战硬菜/考据。" },
+        occasion: { type: "string", enum: ["daily", "banquet"], description: "日常默认（人少时偏主辅料种类少的菜）；宴请放开种类预算。" },
       },
       additionalProperties: false,
     },
@@ -1333,6 +1433,7 @@ export function registerTools(ctx, config = {}) {
         rerollCount: Number(args.rerollCount ?? 0),
         seed: args.seed,
         intent: args.intent,
+        occasion: args.occasion,
       });
     },
     output: output(
@@ -1340,6 +1441,47 @@ export function registerTools(ctx, config = {}) {
       (_a, r) => [{ type: "text", text: formatShuffle(r) }],
       // closed（这局摇完）没有菜可展示：不发空卡，让 UI 回退文本卡（与搜索的 no_hit 同口径）。
       (_a, r) => (r.closed ? null : cardShuffle(r)),
+    ),
+  };
+
+  const recommend = {
+    name: "recommend",
+    description: [
+      "推荐是一等工具：给固定 3 个候选让用户挑，每道带一句「为什么推它」、时间、主辅料种类数、蛋白/人、主料。",
+      "候选之间有差异（主技法或蛋白来源不同）；排序依次遵守画像硬约束 → 场景/精力 → 种类预算（人少偏种类少的菜）→ 长期喜好。",
+      "它不消耗随机挑战的两次机会——menu_shuffle 是「不想想」的随机收敛，这个是「给你选」。",
+      "同一请求结果稳定（不掺随机）；用户都不满意时把 excludeIds 原样传回来换一批，不重复。",
+      "scene: hungry=饿的晚上（快、35 分钟内）/ daily=日常晚饭 / learn=学菜的晚上（放开要练的）。",
+      "用户选定后直接 recipe_get 出做法，配齐一桌用 show_card。用户说「推荐几个」「今晚吃什么给我挑」时用它；说「随便/不想想」才用 menu_shuffle。",
+    ].join(" "),
+    parameters: {
+      type: "object",
+      properties: {
+        scene: { type: "string", enum: ["hungry", "daily", "learn"], description: " hungry=饿的晚上 / daily=日常晚饭（默认）/ learn=学菜的晚上。" },
+        people: { type: "integer", description: "几个人吃，默认取画像。人数少时候选偏向主辅料种类少的菜（一顿能用完）。" },
+        energy: { type: "string", enum: ["tired", "normal", "good"], description: "精力档位：tired 只给 35 分钟内好上手的。优先级：maxMinutes > energy > scene。" },
+        maxMinutes: { type: "integer", description: "单道菜时间上限（分钟）。优先级高于 energy/scene。" },
+        occasion: { type: "string", enum: ["daily", "banquet"], description: "日常默认；宴请放开种类预算、分量不设限。" },
+        excludeIds: { type: "array", items: { type: "string" }, description: "上一轮返回的 excludeIds 原样传回来，换一批不重复。" },
+      },
+      additionalProperties: false,
+    },
+    async execute(args = {}) {
+      const planner = c.getPlanner();
+      return planner.recommend({
+        scene: args.scene,
+        people: Number(args.people ?? planner.people),
+        energy: args.energy,
+        maxMinutes: args.maxMinutes,
+        occasion: args.occasion,
+        excludeIds: Array.isArray(args.excludeIds) ? args.excludeIds : [],
+      });
+    },
+    output: output(
+      recommendSchema,
+      (_a, v) => formatRecommend(v),
+      // empty 分支没有候选可展示：不发空卡，让 UI 回退文本（与搜索 no_hit 同口径）
+      (_a, v) => (v.candidates.length ? cardRecommend(v) : null),
     ),
   };
 
@@ -1442,7 +1584,7 @@ export function registerTools(ctx, config = {}) {
     ),
   };
 
-  return [ctx.tools.register(search), ctx.tools.register(get), ctx.tools.register(show), ctx.tools.register(update), ctx.tools.register(cookLog), ctx.tools.register(plan), ctx.tools.register(shuffle), ctx.tools.register(rescue), ctx.tools.register(showCard)];
+  return [ctx.tools.register(search), ctx.tools.register(get), ctx.tools.register(show), ctx.tools.register(update), ctx.tools.register(cookLog), ctx.tools.register(plan), ctx.tools.register(shuffle), ctx.tools.register(recommend), ctx.tools.register(rescue), ctx.tools.register(showCard)];
 }
 
 export function apply(ctx, config = {}) {
