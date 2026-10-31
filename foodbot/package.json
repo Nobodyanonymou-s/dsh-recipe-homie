@@ -1,7 +1,6 @@
 {
   "name": "dsh-foodbot",
   "version": "0.5.8",
-  "private": true,
   "license": "Apache-2.0",
   "type": "module",
   "description": "把《中国菜谱》各省分册变成 DSH 里的菜谱检索工具：按食材/菜系/技法找菜，取原始斤两配比与出处页码",
