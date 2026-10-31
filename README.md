@@ -31,7 +31,7 @@ dsh plugin --profile desktop add ./dist/dsh-foodbot-<version>.tgz
 
 装包后配一下数据目录，二选一：
 
-- **开箱试用**：把 [data-sample](./foodbot/data-sample/)（各品类抽样的示例语料，147 道）复制到一个可写目录——插件会往里面写画像与状态——再把挂载配置（`cordis.patch.yml` 的 `config:`）里 `dataDir` 指过去
+- **开箱试用**：把 [data-sample](./foodbot/data-sample/)（各品类抽样的示例语料，159 道）复制到一个可写目录——插件会往里面写画像与状态——再把挂载配置（`cordis.patch.yml` 的 `config:`）里 `dataDir` 指过去
 - **完整库**：仓库不含完整菜谱数据（派生自编者藏书，不分发）——自备书源跑 `build → integrate` 产出 `data/`，`dataDir` 指过去，并把 [presets.example.json](./foodbot/presets.example.json) 复制为 `data/presets.json`；细节见[技术文档](./foodbot/README.md)
 
 然后重启 DSH。
@@ -49,7 +49,7 @@ dsh plugin --profile desktop add ./dist/dsh-foodbot-<version>.tgz
 
 ## 路线图
 
-国际菜谱与《随园食单》摄入中；更多分册待扩充。
+《随园食单》与更多分册待摄入；国际菜谱（1,253 种 · 50+ 国）已入册。
 
 ## 许可
 

@@ -127,6 +127,9 @@ export function enrichRecipe(recipe) {
     if (per) servings = Math.max(servings, grams / per);
   }
   servings = servings ? clamp(Math.round(servings), 2, 8) : 4;
+  // 源头声明的份量基准优先（国际菜谱全书十份制，2026-10-31）：西餐原料构成走不进
+  // PER_PERSON 的每人家常启发式，估出来的份数会把馆子菜错放进家常池（servingsBase≤8 守卫失守）。
+  if (Number.isFinite(recipe.servingsBase) && recipe.servingsBase >= 2) servings = recipe.servingsBase;
 
   const PROTEIN_PARENTS = new Set(["猪肉", "牛肉", "羊肉", "禽肉", "水产", "蛋"]);
   const proteinFoodGrams = [...perParent.entries()]

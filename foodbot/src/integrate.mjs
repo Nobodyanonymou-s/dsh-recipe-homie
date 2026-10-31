@@ -395,7 +395,142 @@ for (const r of dazhong) {
 }
 report.dazhong = dzStats;
 
-const pooled = [...withNew, ...dazhongRecords];
+// ---- 3c. 国际菜谱（第 12 来源，2026-10-31 语料批次） ----
+// 输入 data/work/guoji.jsonl（北京友谊宾馆 1983，50+ 国 1,253 道；id=国际-书内全局编号）。
+// 体例：全书按十份数量计（编者的话）→ servingsBase=10；市制斤两钱分；半成品以书内编号引用
+// （奶油少司（274）→ ref 字段）；菜名中英对照（enTitle 保留）。语料线路取向：双线（吃饭+学菜），
+// 馆子基础量不进 bulk（与省册宴席的 61kg 批量配方不同，十份是本书统一基准）。
+const guoji = readJsonl(join(WORK, "guoji.jsonl"));
+const gjStats = { chapter: {}, localAlias: 0, localNew: 0, sauceParent: 0, parentFix: 0, region: 0, formStrip: 0 };
+// 局部别名（不动全局词表——老库 guessed 行逐字节不变的纪律，同大众册 DZ_LOCAL_ALIAS）
+const GJ_ALIAS = {
+  "醋精": "醋", "鲜西红柿": "西红柿", "元白菜": "卷心菜", "蛋青": "鸡蛋清", "老鸡蛋": "鸡蛋",
+  "长葱": "葱", "青葱": "葱", "芹菜叶": "芹菜", "玉米粉": "淀粉", "糖粉": "糖", "酸牛奶": "牛奶",
+  "米饭": "大米", "油炒面粉": "面粉", "猪通脊": "里脊", "羊肉末": "羊肉", "牛肉末": "牛肉",
+  "膨松体奶油": "奶油", "鲜蘑": "蘑菇", "番茄少司": "番茄沙司", "瓶蕃茄少司": "番茄沙司", "蕃茄少司": "番茄沙司",
+};
+// 本书自有物（全局词表没有、也不该为单册扩全局）：西餐常备。canon=自身，营养按 parent 类目默认。
+const GJ_NEW = {
+  "香叶": { parent: "调味", cat: "调味" }, "生菜油": { parent: "油脂", cat: "油脂" },
+  "计司": { parent: "乳", cat: "乳" }, "板肉": { parent: "猪肉", cat: "肉禽" },
+  "结力片": { parent: "调味", cat: "调味" }, "香草片": { parent: "调味", cat: "调味" },
+  "白兰地": { parent: "调味", cat: "调味" }, "白兰地酒": { parent: "调味", cat: "调味" },
+  "葡萄酒": { parent: "调味", cat: "调味" }, "红葡萄酒": { parent: "调味", cat: "调味" },
+  "白葡萄酒": { parent: "调味", cat: "调味" }, "红酒": { parent: "调味", cat: "调味" },
+  "酸黄瓜": { parent: "蔬菜", cat: "蔬菜" }, "辣根": { parent: "调味", cat: "调味" },
+};
+// 煮/熟/净/老 等前置形态词（「煮土豆条」→「土豆条」→lookup 形态词→土豆）；迭代剥最多三层
+const GJ_FORM_PREFIX = /^(煮|熟|炸|烤|腌|净|鲜|老|去皮|带皮|去骨)+/;
+// 兜底 parent（挂不上 canon 的：素油/清汤/沙司族。canon=自身——enrich 只累计有 canon 的行，
+// parent-only 行会被整行跳过营养（2026-10-31 国际册 24 道 0kcal 的根因）。parent 必须是
+// NUTRI_PARENT 合法类目：汤底/谷物 都在，别用「面粉/主食」这类不是类目的词）
+const GJ_PARENT = {
+  "油": "油脂", "清汤": "汤底", "鱼清汤": "汤底", "鸡清汤": "汤底", "木鱼汤": "汤底",
+  "面团": "谷物", "混酥面团": "谷物", "甜酥面团": "谷物", "面包": "谷物",
+};
+const normalizeGuojiIng = (ing) => {
+  const out = { ...ing };
+  let name = String(ing.name ?? "").replace(/\s+/g, "");
+  let e = lookup(name);
+  if ((!e || e.guessed) && GJ_ALIAS[name]) { const t = lookup(GJ_ALIAS[name]); if (t && !t.guessed) { e = t; gjStats.localAlias++; } }
+  if ((!e || e.guessed)) {
+    let stripped = name;
+    for (let i = 0; i < 3 && GJ_FORM_PREFIX.test(stripped) && stripped !== stripped.replace(GJ_FORM_PREFIX, ""); i++) {
+      stripped = stripped.replace(GJ_FORM_PREFIX, "");
+      const t = lookup(stripped);
+      if (t && !t.guessed) { e = t; gjStats.formStrip++; break; }
+    }
+    if (name !== stripped && (!e || e.guessed)) name = stripped;
+  }
+  if ((!e || e.guessed) && GJ_NEW[name]) {
+    out.canon = name; out.key = name; out.parent = GJ_NEW[name].parent; out.cat = GJ_NEW[name].cat;
+    out.allergen = []; out.guessed = false; out.grams = out.grams ?? null;
+    gjStats.localNew++;
+    return out;
+  }
+  if (e && !e.guessed) {
+    const p = ing.grams == null ? parseAmount(ing.amount ?? "", e) : null;
+    return { ...out, key: e.id, canon: e.id, parent: e.parent, cat: e.cat, allergen: e.allergen ?? [], guessed: false, grams: ing.grams ?? p?.grams ?? null, count: ing.count ?? p?.count ?? null };
+  }
+  // 沙司/少司族（含带引用号的「奶油少司」）：不逐个建条目，canon=自身 + parent 调味
+  if (/少司|沙司/.test(name)) { out.canon = name; out.key = name; out.parent = "调味"; out.cat = "调味"; out.allergen = []; out.guessed = true; gjStats.sauceParent++; return out; }
+  for (const [k, parent] of Object.entries(GJ_PARENT)) {
+    if (name === k || name.endsWith(k)) { out.canon = name; out.key = name; out.parent = parent; out.cat = parent; out.allergen = []; out.guessed = true; gjStats.parentFix++; return out; }
+  }
+  const g = lookup(name); // 后缀大类兜底（鱼/虾/菜/肉/菇）
+  if (g) { out.key = g.id; out.canon = g.id; out.parent = g.parent; out.cat = g.cat; out.allergen = g.allergen ?? []; out.guessed = true; }
+  return out;
+};
+// 风格前缀 → 国家/地区（「法式煮鱼白酒鲜蘑少司」→ 法国）
+const GJ_REGION = {
+  "法": "法国", "德": "德国", "俄": "俄国", "英": "英国", "美": "美国", "意": "意大利", "印度": "印度",
+  "朝鲜": "朝鲜", "日": "日本", "土耳其": "土耳其", "南斯拉夫": "南斯拉夫", "捷克": "捷克斯洛伐克",
+  "波兰": "波兰", "匈牙利": "匈牙利", "罗马尼亚": "罗马尼亚", "保加利亚": "保加利亚",
+  "诺尔曼": "法国", "莫斯科": "俄国", "约旦": "约旦", "叙利亚": "叙利亚", "尼泊尔": "尼泊尔",
+  "桑给巴尔": "桑给巴尔", "埃及": "埃及", "埃塞俄比亚": "埃塞俄比亚", "墨西哥": "墨西哥", "巴西": "巴西",
+  "智利": "智利", "阿根廷": "阿根廷", "印尼": "印度尼西亚", "越南": "越南", "泰国": "泰国", "缅甸": "缅甸",
+  "巴基斯坦": "巴基斯坦", "伊朗": "伊朗", "伊拉克": "伊拉克", "黎巴嫩": "黎巴嫩", "希腊": "希腊",
+  "瑞士": "瑞士", "丹麦": "丹麦", "瑞典": "瑞典", "挪威": "挪威", "芬兰": "芬兰", "荷兰": "荷兰",
+  "比利时": "比利时", "奥地利": "奥地利", "西班牙": "西班牙", "葡萄牙": "葡萄牙", "蒙古": "蒙古",
+};
+const guojiRegionOf = (title) => {
+  const m = String(title ?? "").match(/^(.{1,5}?)式/);
+  if (!m) return null;
+  return GJ_REGION[m[1]] ?? m[1];
+};
+// 章节：冷菜族（沙拉/腌制/胶冻/其它/冷菜/水产）与汤族按主料蛋白拆（同大众册 coldSoupSplit 口径）；
+// 猪牛→肉菜类，蛋禽→禽蛋菜类，鱼虾→水产菜类，无荤→素菜类；饭点心/面包→其他菜类，茶点心→甜菜类。
+const GJ_CHAPTER = { "猪肉类": "肉菜类", "牛肉类": "肉菜类", "羊肉类": "肉菜类", "蛋品类": "禽蛋菜类", "水产类": "水产菜类", "鱼虾类": "水产菜类", "禽类": "禽蛋菜类", "饭点心": "其他菜类", "面包": "其他菜类", "茶点心": "甜菜类", "点心类": "甜菜类" };
+const GJ_COLD = new Set(["沙拉子类", "腌制蔬菜类", "胶冻类", "其 它", "其它", "其他", "冷菜类", "配菜类"]);
+const GJ_PROTEIN_CH = { 猪肉: "肉菜类", 牛肉: "肉菜类", 羊肉: "肉菜类", 禽肉: "禽蛋菜类", 蛋: "禽蛋菜类", 水产: "水产菜类" };
+const guojiChapterOf = (rec, sectionRaw) => {
+  const sec = String(sectionRaw ?? "").replace(/\s+/g, "");
+  if (GJ_CHAPTER[sec]) return GJ_CHAPTER[sec];
+  const ings = rec.ingredients ?? [];
+  const byProtein = ["猪肉", "牛肉", "羊肉"].find((p) => ings.some((i) => i.parent === p))
+    ?? (ings.some((i) => i.parent === "禽肉" || i.canon === "鸡蛋" || i.canon === "鸡蛋清") ? "禽肉" : null)
+    ?? (ings.some((i) => /鱼|虾|蟹/.test(String(i.canon ?? "")) || i.parent === "水产") ? "水产" : null);
+  if (GJ_COLD.has(sec) || sec.startsWith("汤") || /汤类$/.test(sec)) {
+    return byProtein ? GJ_PROTEIN_CH[byProtein] : "素菜类";
+  }
+  return byProtein ? GJ_PROTEIN_CH[byProtein] : "其他菜类";
+};
+const guojiRecords = [];
+for (const r of guoji) {
+  const id = r.id;
+  if (!id || guojiRecords.some((x) => x.id === id) || withNew.some((x) => x.id === id) || dazhongRecords.some((x) => x.id === id)) {
+    report.warnings.push(`国际记录 id 冲突或缺 id：${id}`);
+    continue;
+  }
+  const rec = {
+    id,
+    seq: r.seq ?? null,
+    seqNum: r.seq ?? null,
+    title: r.title,
+    enTitle: r.enTitle ?? null,
+    cuisine: "国际",
+    region: r.region ?? guojiRegionOf(r.title),
+    book: "国际菜谱",
+    pages: r.pages ?? [],
+    page: r.page ?? null,
+    chapterRaw: [r.section, r.subsection].filter(Boolean).join(" / ") || null,
+    servingsBase: 10, // 全书十份基准（编者的话）；单人场景由菜单文案承载「按原方 10 份」
+    ingredients: (r.ingredients ?? []).map(normalizeGuojiIng).map(patchOilConsumed),
+    steps: r.steps ?? [],
+    features: r.features ?? null,
+    notes: typeof r.notes === "string" ? r.notes : (r.notes ?? []).map((n) => n?.text ?? n ?? "").filter(Boolean),
+  };
+  if (rec.region) gjStats.region++;
+  rec.chapter = guojiChapterOf(rec, r.section);
+  const tags = deriveTags(rec.title, "", rec.steps, rec.ingredients);
+  rec.methods = tags.methods;
+  rec.flavors = tags.flavors;
+  gjStats.chapter[rec.chapter] = (gjStats.chapter[rec.chapter] ?? 0) + 1;
+  guojiRecords.push(rec);
+}
+report.guoji = gjStats;
+
+const pooled = [...withNew, ...dazhongRecords, ...guojiRecords];
 
 // 2c. grams 修复：按 原料名 定位（用重定位后的 targetId）。
 // W2 P3 起挪到 withNew 之后——南北册的行（外层小数「2.5斤」4 行）也能走同一证据门。

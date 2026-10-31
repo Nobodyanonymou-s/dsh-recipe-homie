@@ -31,7 +31,7 @@ dsh plugin --profile desktop add ./dist/dsh-foodbot-<version>.tgz
 
 After installing, point it at a data directory — pick one:
 
-- **Try it now**: copy [data-sample](./foodbot/data-sample/) (a sampled corpus, 147 dishes across every category) to a writable location — the plugin writes profile and state files there — and set `dataDir` in the mount config (`cordis.patch.yml` `config:` block) to it
+- **Try it now**: copy [data-sample](./foodbot/data-sample/) (a sampled corpus, 159 dishes across every category) to a writable location — the plugin writes profile and state files there — and set `dataDir` in the mount config (`cordis.patch.yml` `config:` block) to it
 - **Full library**: the repo ships no complete recipe data (derived from the owner's book collection, not distributed) — bring your own book sources, run `build → integrate` to produce `data/`, point `dataDir` there, and copy [presets.example.json](./foodbot/presets.example.json) to `data/presets.json`; see the [tech doc](./foodbot/README.md)
 
 Then restart DSH.
@@ -49,7 +49,7 @@ Recipes are fixed; cooking is flexible. A menu is an option, not a task. Ask why
 
 ## Roadmap
 
-International cookbook and *Suiyuan Shidan* intake in progress; more volumes to follow.
+*Suiyuan Shidan* and more volumes to follow; the international cookbook (1,253 dishes, 50+ countries) is in.
 
 ## License
 
