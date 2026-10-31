@@ -1,14 +1,14 @@
 ﻿/**
- * 把子任务给的词表补全合并成源码里的 `src/lexicon-extra.mjs`。
+ * 把子任务给的词表补全合并成源码里的 `src/lexicon-extra.ts`。
  *
- * 不直接改 lexicon.mjs 正文：那 260 条是手写的，文本改动容易碰坏；
- * 这里生成一个补充模块，由 lexicon.mjs 在末尾 push 进 CANON。
+ * 不直接改 lexicon.ts 正文：那 260 条是手写的，文本改动容易碰坏；
+ * 这里生成一个补充模块，由 lexicon.ts 在末尾 push 进 CANON。
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BASE } from "../src/lexicon.mjs";
-import { lookup } from "../src/ingredients.mjs";
+import { BASE } from "../src/lexicon.ts";
+import { lookup } from "../src/ingredients.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const src = JSON.parse(readFileSync(`${ROOT}/data/work/lexicon-additions.json`, "utf8").replace(/^\uFEFF/, ""));
@@ -69,14 +69,14 @@ const lines = entries.map((e) => {
 });
 
 const body = `/**
- * 词表补充（由 tools/merge-lexicon.mjs 从 data/work/lexicon-additions.json 生成）。
+ * 词表补充（由 tools/merge-lexicon.ts 从 data/work/lexicon-additions.json 生成）。
  * 这些是子任务从 2,877 道菜的实际用词里挖出来的异名与新概念，别手改——改上游再重生成。
  */
 export const EXTRA = [
 ${lines.join("\n")}
 ];
 `;
-writeFileSync(`${ROOT}/src/lexicon-extra.mjs`, body, "utf8");
+writeFileSync(`${ROOT}/src/lexicon-extra.ts`, body, "utf8");
 
 console.log(JSON.stringify({
   source: src.length,

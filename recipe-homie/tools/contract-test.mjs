@@ -18,10 +18,10 @@
  * 所以 fixture 做法是：在候选查询里挑一个「所有命中都至少有一个 canon」的，把这些 canon 全部
  * 记为硬忌口，再断言 all_blocked 真的被触发（候选与 canon 都从当前数据派生，不硬编码）。
  */
-import { registerTools } from "../src/plugin.mjs";
-import { RecipeBook } from "../src/query.mjs";
-import { DEFAULT_PROFILE } from "../src/profile.mjs";
-import { DEFAULT_STATE } from "../src/state.mjs";
+import { registerTools } from "../src/index.ts";
+import { RecipeBook } from "../src/query.ts";
+import { DEFAULT_PROFILE } from "../src/profile.ts";
+import { DEFAULT_STATE } from "../src/state.ts";
 import { writeFileSync, existsSync, mkdirSync, rmSync, linkSync, copyFileSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

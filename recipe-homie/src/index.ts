@@ -16,23 +16,51 @@
  *   - 用户提到的"最近/这个月/孕期/减脂"进 periods（有窗口），"一直不喜欢"进 longTerm
  *   - 排菜单的采购清单是给人看的，不是给机器看的：不要改单位、不要合并批次
  */
-import { RecipeBook } from "./query.mjs";
-import { Planner, EXOTIC_INGREDIENTS, LUXURY_INGREDIENTS } from "./planner.mjs";
-import { loadProfile, saveProfile, resolveConstraints, activePeriods, scoreRecipe, titleImpliedAllergens, omitInfoFor, mainAvoidFor, DEFAULT_PROFILE } from "./profile.mjs";
-import { loadState, saveState as saveStateFile, openWants, recentCooks, verdicts, leftoversLine, DEFAULT_STATE } from "./state.mjs";
-import { estimateMinutes, easyWayOut, portionNote } from "./care.mjs";
-import { CANON } from "./lexicon.mjs";
-import { lookup } from "./ingredients.mjs";
+import { RecipeBook } from "./query.ts";
+import { Planner, EXOTIC_INGREDIENTS, LUXURY_INGREDIENTS } from "./planner.ts";
+import { loadProfile, saveProfile, resolveConstraints, activePeriods, scoreRecipe, titleImpliedAllergens, omitInfoFor, mainAvoidFor, DEFAULT_PROFILE } from "./profile.ts";
+import { loadState, saveState as saveStateFile, openWants, recentCooks, verdicts, leftoversLine, DEFAULT_STATE } from "./state.ts";
+import { estimateMinutes, easyWayOut, portionNote } from "./care.ts";
+import { CANON } from "./lexicon.ts";
+import { lookup } from "./ingredients.ts";
 import { fileURLToPath } from "node:url";
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+
+/** 宿主边界（只做结构约束，不改行为）：
+ *  本插件对宿主只依赖两件事——ctx.effect(fn, label) 与 ctx.tools.register(tool)（返回 disposer），别的都不碰。 */
+interface HostContext {
+  effect(setup: () => unknown, label?: string): void;
+  tools: { register(tool: RegisteredTool): () => void };
+}
+
+/** render 的产物：[{ type: "text", text }]（契约冻结）。 */
+type RenderBlock = { type: "text"; text: string };
+type Render = (args: any, value: any) => RenderBlock[];
+type PresentationMeta = (args: any, value: any) => any;
+
+/** 单个工具的注册形状（schema/render/presentationMeta/execute 四件套）。 */
+interface RegisteredTool {
+  name: string;
+  description: string;
+  parameters: Record<string, any>;
+  output: {
+    schema: Record<string, any>;
+    render: Render;
+    presentationMeta?: PresentationMeta | null;
+  };
+  execute(args?: any): unknown;
+}
 
 export const name = "recipe-homie";
 export const inject = ["tools"];
 
 export const Config = await (async () => {
   try {
-    const { default: z } = await import("@deepseek-ai/schemastery");
+    // 「as string」只影响类型检查：表达式不再是字面量，TS 就不去解析这个可选 peer 依赖（本仓库没装），z 落成 any；
+    // 运行时仍是同一个动态 import，宿主有就拿到、没有就 catch 成 undefined
+    const { default: z } = await import("@deepseek-ai/schemastery" as string);
     return z.object({
       dataDir: z.string().default(""),
       profileFile: z.string().default(""),
@@ -44,6 +72,8 @@ export const Config = await (async () => {
 })();
 
 const DEFAULT_DATA = join(dirname(fileURLToPath(import.meta.url)), "..", "data");
+/** 包根：源码在 src/ 或编译产物在 lib/ 时都指向包根（深度相同）。 */
+const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
  * 工具契约三件套。
@@ -51,15 +81,15 @@ const DEFAULT_DATA = join(dirname(fileURLToPath(import.meta.url)), "..", "data")
  *   render：给模型看的文本块
  *   presentationMeta：给浏览器的卡片；无卡片工具不传
  */
-const output = (schema, render, presentationMeta) => ({ schema, render, presentationMeta });
+const output = (schema: Record<string, any>, render: Render, presentationMeta?: PresentationMeta) => ({ schema, render, presentationMeta });
 
 /** 字符串工具（无卡片）统一用这个 render。 */
-const renderString = (_a, v) => [{ type: "text", text: typeof v === "string" ? v : String(v ?? "") }];
+const renderString: Render = (_a, v) => [{ type: "text", text: typeof v === "string" ? v : String(v ?? "") }];
 
 /** 只留中文/英文/数字：与 query.mjs 的 cleanQuery 同口径（那边不导出，这里收一个小函数）。 */
-const cleanText = (text) => String(text ?? "").replace(/[^一-龥A-Za-z0-9]+/g, "");
+const cleanText = (text: any): string => String(text ?? "").replace(/[^一-龥A-Za-z0-9]+/g, "");
 
-function amountText(ing) {
+function amountText(ing: any): string {
   if (ing.qualifier) return ing.qualifier;
   if (ing.amount) return ing.amount;
   return "";
@@ -71,7 +101,7 @@ function amountText(ing) {
 
 /** recipe_search 的单条命中（summaryLine 与 cardSearch 都从它派生）。
  *  0.4.2 R2b：omit 由 execute 按当前画像补上（配料级忌口 → 免 X 版），无画像约束时为空数组。 */
-function hitValue(h, cons = null) {
+function hitValue(h: any, cons: any = null) {
   const r = h.recipe;
   return {
     id: r.id,
@@ -89,7 +119,7 @@ function hitValue(h, cons = null) {
     features: r.features ?? "",
     blurb: r.blurb ?? "",
     // summaryLine 的「用料」行：取前 4 条；多出的用 ingredientCount 判断是否补「…」
-    lineIngredients: top(r.ingredients, 4).map((i) => ({
+    lineIngredients: top(r.ingredients, 4).map((i: any) => ({
       name: i.name ?? null,
       raw: i.raw ?? "",
       amount: amountText(i),
@@ -102,7 +132,7 @@ function hitValue(h, cons = null) {
 
 /** recipe_get 的完整菜谱值。字段覆盖 render（原文/斤两/页码）与卡片（clip/top 前的全量）。
  *  0.4.2 R2b：omit（配料级忌口，省去即可）/ avoidMain（主料级忌口，本不该推荐）由 execute 按画像补。 */
-function recipeValue(r, cons = null) {
+function recipeValue(r: any, cons: any = null) {
   return {
     id: r.id,
     title: r.title,
@@ -118,7 +148,7 @@ function recipeValue(r, cons = null) {
     kcal: r.perServing?.kcal ?? null,
     salt: r.nutrition?.saltGrams ?? null,
     allergens: top(r.allergens, Number.MAX_SAFE_INTEGER),
-    ingredients: (r.ingredients ?? []).map((i) => ({
+    ingredients: (r.ingredients ?? []).map((i: any) => ({
       name: i.name,
       // 0.1.2 的 render 用 amount、卡片用 amount||qualifier；本库 qualifier 只与 amount 同时出现，合并后两者逐字一致
       amount: i.amount || i.qualifier || "",
@@ -127,7 +157,7 @@ function recipeValue(r, cons = null) {
     steps: (r.steps ?? []).slice(),
     features: r.features ?? "",
     notes: (r.notes ?? []).slice(),
-    variants: (r.variants ?? []).filter((v) => v.verdict === "same_dish").flatMap((v) => v.others ?? []),
+    variants: (r.variants ?? []).filter((v: any) => v.verdict === "same_dish").flatMap((v: any) => v.others ?? []),
     skill: r.skill?.tier ?? null,
     blurb: r.blurb ?? "",
     nutrition: r.nutrition ?? null,
@@ -140,18 +170,18 @@ function recipeValue(r, cons = null) {
 // ───────── render：从 canonical 值出来的人话 ─────────
 
 /** 免 X 版提示行（R2b）：配料级忌口 → 省去 X（约 N g）。菜单/摇一桌/检索共用一个格式。 */
-function omitLine(omit, indent) {
+function omitLine(omit: any, indent: any): string {
   if (!omit?.length) return "";
-  const names = omit.map((o) => o.target).join("/");
-  const detail = omit.map((o) => `${o.target}（约 ${Math.round(o.grams)} g）`).join("、");
+  const names = omit.map((o: any) => o.target).join("/");
+  const detail = omit.map((o: any) => `${o.target}（约 ${Math.round(o.grams)} g）`).join("、");
   return `${indent}免${names}版：省去 ${detail}`;
 }
 
 /** recipe_search 的 ok 分支：与 0.1.2 的 summaryLine 版式逐字一致；
  *  0.4.2 R2b 唯一的新增行是命中带 omit 时的「免 X 版」提示（配料级忌口，做法照旧、省去该料）。 */
-function summaryLine(h, i) {
+function summaryLine(h: any, i: number): string {
   const ing = h.lineIngredients
-    .map((x) => (x.name ? `${x.name}${x.amount ? ` ${x.amount}` : ""}` : x.raw))
+    .map((x: any) => (x.name ? `${x.name}${x.amount ? ` ${x.amount}` : ""}` : x.raw))
     .join("、");
   return [
     `${i + 1}. ${h.title}（${h.cuisine}${h.chapter ? `·${h.chapter}` : ""}）${h.blurb}`,
@@ -165,12 +195,12 @@ function summaryLine(h, i) {
 /** recipe_get 的 found 分支：与 0.1.2 的 recipeText 逐字一致（含页码、克数原文）。
  *  0.4.1 裁决 10（E2 S4）：page 缺失不再沉默——如实标注「整理版无页码」
  *  （2026-10-31 起南北册 706 条页码已从 pages 文件名接入，此标注只剩省册少数真缺页）。 */
-function recipeTextFromValue(r) {
+function recipeTextFromValue(r: any): string {
   const head = `《${r.book}》${r.page ? ` p.${r.page}` : "（整理版无页码）"}${r.seq ? ` · 第${r.seq}条` : ""}${r.recoveredTitle ? "（菜名由目录补全）" : ""}`;
   const ing = r.ingredients
-    .map((x) => `- ${x.name}${x.amount ? ` ${x.amount}` : ""}${x.grams && x.amount ? `（≈${x.grams}g）` : ""}`)
+    .map((x: any) => `- ${x.name}${x.amount ? ` ${x.amount}` : ""}${x.grams && x.amount ? `（≈${x.grams}g）` : ""}`)
     .join("\n");
-  const steps = r.steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
+  const steps = r.steps.map((s: any, i: number) => `${i + 1}. ${s}`).join("\n");
   return [
     `# ${r.title}`,
     head,
@@ -192,7 +222,7 @@ function recipeTextFromValue(r) {
 }
 
 /** recipe_search 的非 ok 分支：hint 一句话 + 近邻行。 */
-function renderSearchMiss(v) {
+function renderSearchMiss(v: any): string {
   const lines = [v.hint?.text ?? ""];
   if (v.neighbors?.length) {
     lines.push("", "相近的：");
@@ -202,7 +232,7 @@ function renderSearchMiss(v) {
 }
 
 /** recipe_get 的 not_found 分支：没找到 + 可执行建议。 */
-function renderGetMiss(v) {
+function renderGetMiss(v: any): string {
   const lines = [v.hint?.text ?? "没找到这道菜。"];
   if (v.suggestions?.length) {
     lines.push("", "也许你想找的是：");
@@ -214,7 +244,7 @@ function renderGetMiss(v) {
 // ───────── 计划类文本（0.1.2 原文照搬，只改成从 canonical 值取） ─────────
 
 /** 把算出来的计划变成能读的文字（不交给模型二次加工，避免数字被改） */
-export function formatMenu(result) {
+export function formatMenu(result: any): string {
   const mood = result.energy === "tired" ? "省事模式" : result.energy === "good" ? "有精力" : "日常";
   const lines = [`${result.days} 天菜单 · ${result.people} 人 · ${mood} · 种子 ${result.seed}`, ""];
   for (const day of result.plan) {
@@ -238,7 +268,7 @@ export function formatMenu(result) {
       }
     }
     // 每日总盘子（§3.2.3）：对着天级目标说实话，缺早餐/主食的缺口摆出来
-    const t = (result.dailyTotals ?? []).find((x) => x.day === day.day);
+    const t = (result.dailyTotals ?? []).find((x: any) => x.day === day.day);
     if (t) {
       const pTxt = t.proteinTarget != null
         ? `（目标 ${t.proteinTarget}g${t.proteinGap == null ? "" : t.proteinGap < 0 ? `，差 ${-t.proteinGap}g` : t.proteinGap > 0 ? `，超 ${t.proteinGap}g` : "，刚好"}）`
@@ -264,9 +294,9 @@ export function formatMenu(result) {
   return lines.join("\n");
 }
 
-export function formatShopping(s) {
+export function formatShopping(s: any): string {
   const lines = ["采购清单", ""];
-  const block = (title, items, withDays = false) => {
+  const block = (title: any, items: any, withDays = false) => {
     if (!items?.length) return;
     lines.push(title);
     for (const i of items) {
@@ -288,7 +318,7 @@ export function formatShopping(s) {
 /** menu_shuffle 的 render；closed（这局摇完）只输出 hint + 退路。
  *  0.4.1 裁决 12（E1 Q10）：参数怎么传（excludeIds/rerollCount）是给模型的指令，留在工具
  *  description 与返回值里，不再漏进用户可见文本。 */
-function formatShuffle(r) {
+function formatShuffle(r: any): string {
   if (r.closed) {
     const lines = [`${r.people} 人 · ${r.combo} · 这局摇完了`, ""];
     lines.push(r.hint);
@@ -313,12 +343,12 @@ function formatShuffle(r) {
 
 /** recommend 的 render（R20）：固定 3 个候选，每道「为什么推它」+ 主料 + 种类数/蛋白；
  *  结尾给下一步（选定 → recipe_get / show_card），不消耗随机挑战的次数。 */
-function formatRecommend(v) {
+function formatRecommend(v: any): RenderBlock[] {
   if (!v.candidates.length) return [{ type: "text", text: v.hint.text }];
   const sceneTxt = v.scene === "hungry" ? "饿的晚上" : v.scene === "learn" ? "学菜的晚上" : "日常晚饭";
   const occTxt = v.occasion === "banquet" ? " · 宴请" : "";
   const lines = [`${sceneTxt} · ${v.people} 人${occTxt} · 挑一道${Number.isFinite(v.maxMinutes) ? `（${v.maxMinutes} 分钟内）` : ""}`];
-  v.candidates.forEach((d, i) => {
+  v.candidates.forEach((d: any, i: number) => {
     lines.push(`${i + 1}. ${d.title}（${d.cuisine}${d.chapter ? `·${d.chapter}` : ""}）${d.isProtein ? "" : "（素）"}——${d.why}`);
     const main = d.mainIngredients.length ? d.mainIngredients.join("、") : "—";
     lines.push(`   主料：${main}${d.servings ? ` · 原方 ${d.servings} 人份` : ""} · id=${d.id}`);
@@ -331,7 +361,7 @@ function formatRecommend(v) {
 }
 
 /** cook_rescue 的 render。0.4.1 裁决 7（E1 Q7）：文案与实际过滤分钟数一致——过滤 ≤30 分钟。 */
-function formatRescue(v) {
+function formatRescue(v: any): string {
   const lines = ["今天不做大餐就不做，这不是欠账。"];
   if (v.dishes.length) lines.push(`三十分钟能出的：\n  ${v.dishes.join("\n  ")}`);
   if (v.leftovers) lines.push(`冰箱里还有 ${v.leftovers}，热一下、或者炒个饭，也算一顿。`);
@@ -340,7 +370,7 @@ function formatRescue(v) {
 }
 
 /** show_card 的 render：告诉模型卡里有什么、用户能拿它干什么。 */
-function renderBoard(v) {
+function renderBoard(v: any): string {
   if (!v.found) {
     const missing = v.missing?.length ? `没找到：${v.missing.join("、")}。` : "dishes 是空的。";
     return `${missing}先用 recipe_search 找到菜、拿 id 再传过来。`;
@@ -349,7 +379,8 @@ function renderBoard(v) {
   for (const d of v.dishes) {
     lines.push(`  · ${d.title}（${d.cuisine}${d.chapter ? `·${d.chapter}` : ""}）${d.minutes ? ` ${d.minutes} 分钟` : ""}${d.protein ? ` · 蛋白 ${d.protein}g/人` : ""}`);
   }
-  const groups = new Map();
+  // Map<any, any>：键是动态分组名、值是拼出来的字符串数组（不写类型参数会让 .get(...) 变 unknown，严格模式过不了）
+  const groups = new Map<any, any>();
   for (const s of v.shopping) {
     const g = s.group || "采购";
     if (!groups.has(g)) groups.set(g, []);
@@ -365,19 +396,19 @@ function renderBoard(v) {
 // ───────── 卡片投影 ─────────
 // 浏览器看 card：只放「有界、可回放」的事实。形状与 0.1.2 冻结一致：
 // 数组截断、字符串截断、不做 I/O、不读时钟——同一次调用重放必须得到同样的卡片。
-const clip = (s, n) => {
+const clip = (s: any, n: number): string => {
   const t = String(s ?? "");
   return t.length > n ? `${t.slice(0, n)}…` : t;
 };
-const top = (arr, n) => (Array.isArray(arr) ? arr.slice(0, n) : []);
+const top = (arr: any, n: number): any[] => (Array.isArray(arr) ? arr.slice(0, n) : []);
 
-export function cardSearchFromValue(v) {
+export function cardSearchFromValue(v: any) {
   return {
     kind: "search",
     // 0.1.2 的卡片 total 是「命中数（过滤后）」；这里用 total - blocked - hidden 复算
     total: v.total - v.blocked - v.hidden,
     blocked: v.blocked,
-    items: top(v.hits, 12).map((h) => ({
+    items: top(v.hits, 12).map((h: any) => ({
       id: h.id,
       title: h.title,
       cuisine: h.cuisine,
@@ -391,7 +422,7 @@ export function cardSearchFromValue(v) {
   };
 }
 
-export function cardRecipeFromValue(r) {
+export function cardRecipeFromValue(r: any) {
   return {
     kind: "recipe",
     id: r.id,
@@ -406,35 +437,35 @@ export function cardRecipeFromValue(r) {
     kcal: r.kcal ?? null,
     salt: r.salt ?? null,
     allergens: top(r.allergens, 6),
-    ingredients: top(r.ingredients, 24).map((i) => ({
+    ingredients: top(r.ingredients, 24).map((i: any) => ({
       name: i.name,
       amount: i.amount || "",
       grams: i.grams ?? null,
     })),
-    steps: top(r.steps, 20).map((s) => clip(s, 220)),
+    steps: top(r.steps, 20).map((s: any) => clip(s, 220)),
     features: clip(r.features, 160),
-    notes: top(r.notes, 4).map((s) => clip(s, 120)),
+    notes: top(r.notes, 4).map((s: any) => clip(s, 120)),
     variants: top(r.variants, 6),
     skill: r.skill ?? null,
   };
 }
 
-export function cardBoard(v) {
+export function cardBoard(v: any) {
   return {
     kind: "board",
     title: clip(v.title, 40),
-    dishes: top(v.dishes, 4).map((r) => cardRecipeFromValue(r)),
-    shopping: top(v.shopping, 40).map((s) => ({
+    dishes: top(v.dishes, 4).map((r: any) => cardRecipeFromValue(r)),
+    shopping: top(v.shopping, 40).map((s: any) => ({
       group: s.group ? clip(s.group, 20) : null,
       name: clip(s.name, 40),
       qty: s.qty ? clip(s.qty, 30) : null,
       note: s.note ? clip(s.note, 60) : null,
     })),
-    notes: top(v.notes, 6).map((n) => clip(n, 120)),
+    notes: top(v.notes, 6).map((n: any) => clip(n, 120)),
   };
 }
 
-export function cardPlan(result) {
+export function cardPlan(result: any) {
   return {
     kind: "plan",
     days: result.days,
@@ -442,13 +473,13 @@ export function cardPlan(result) {
     energy: result.energy ?? "normal",
     seed: result.seed,
     maxMinutes: result.maxMinutes ?? null,
-    menu: top(result.plan, 7).map((d) => ({
+    menu: top(result.plan, 7).map((d: any) => ({
       day: d.day,
-      meals: top(d.meals, 2).map((m) => ({
+      meals: top(d.meals, 2).map((m: any) => ({
         name: m.name,
         protein: m.protein,
         kcal: m.kcal,
-        dishes: top(m.dishes, 4).map((x) => ({
+        dishes: top(m.dishes, 4).map((x: any) => ({
           id: x.id,
           title: x.title,
           role: x.role,
@@ -462,17 +493,17 @@ export function cardPlan(result) {
       })),
     })),
     shopping: {
-      buyOnce: top(result.shopping?.buyOnce?.items, 20).map((i) => ({ name: i.name, qty: i.qty })),
-      batches: top(result.shopping?.batches, 3).map((b) => ({ label: b.label, items: top(b.items, 20).map((i) => ({ name: i.name, qty: i.qty, days: top(i.days, 7) })) })),
-      staples: top(result.shopping?.staples?.items, 20).map((i) => ({ name: i.name, qty: i.qty })),
-      selfMade: top(result.shopping?.selfMade?.items, 5).map((i) => ({ name: i.name, qty: i.qty })),
-      keep: top(result.shopping?.keep, 10).map((i) => ({ name: i.name, qty: i.qty })),
+      buyOnce: top(result.shopping?.buyOnce?.items, 20).map((i: any) => ({ name: i.name, qty: i.qty })),
+      batches: top(result.shopping?.batches, 3).map((b: any) => ({ label: b.label, items: top(b.items, 20).map((i: any) => ({ name: i.name, qty: i.qty, days: top(i.days, 7) })) })),
+      staples: top(result.shopping?.staples?.items, 20).map((i: any) => ({ name: i.name, qty: i.qty })),
+      selfMade: top(result.shopping?.selfMade?.items, 5).map((i: any) => ({ name: i.name, qty: i.qty })),
+      keep: top(result.shopping?.keep, 10).map((i: any) => ({ name: i.name, qty: i.qty })),
     },
-    notes: top(result.notes, 6).map((n) => clip(n, 120)),
+    notes: top(result.notes, 6).map((n: any) => clip(n, 120)),
   };
 }
 
-export function cardShuffle(r) {
+export function cardShuffle(r: any) {
   return {
     kind: "shuffle",
     people: r.people,
@@ -480,7 +511,7 @@ export function cardShuffle(r) {
     rerollCount: r.rerollCount,
     energy: r.energy ?? "normal",
     askReason: Boolean(r.askReason),
-    dishes: top(r.dishes, 4).map((d) => ({
+    dishes: top(r.dishes, 4).map((d: any) => ({
       id: d.id,
       title: d.title,
       role: d.role,
@@ -496,21 +527,21 @@ export function cardShuffle(r) {
   };
 }
 
-export function cardRescue(dishes, fallback) {
+export function cardRescue(dishes: any, fallback: any) {
   return {
     kind: "rescue",
-    dishes: top(dishes, 4).map((d) => ({ name: d, })).map((x) => x.name),
+    dishes: top(dishes, 4).map((d: any) => ({ name: d, })).map((x: any) => x.name),
     fallback: clip(fallback, 160),
   };
 }
 
-export function cardRecommend(v) {
+export function cardRecommend(v: any) {
   return {
     kind: "recommend",
     scene: v.scene,
     people: v.people,
     occasion: v.occasion ?? "daily",
-    items: top(v.candidates, 3).map((d) => ({
+    items: top(v.candidates, 3).map((d: any) => ({
       id: d.id,
       title: d.title,
       cuisine: d.cuisine,
@@ -523,7 +554,7 @@ export function cardRecommend(v) {
       isProtein: Boolean(d.isProtein),
       why: clip(d.why, 100),
       main: top(d.mainIngredients, 4),
-      note: top(d.omit, 2).map((o) => `免${o.target}版：省去 ${o.target}（约 ${Math.round(o.grams ?? 0)} g）`),
+      note: top(d.omit, 2).map((o: any) => `免${o.target}版：省去 ${o.target}（约 ${Math.round(o.grams ?? 0)} g）`),
     })),
     hint: clip(v.hint.text, 200),
   };
@@ -538,11 +569,11 @@ export function cardRecommend(v) {
 // 所以「可空」不能写 type:["number","null"]，要写 oneOf:[{type:"number"},{type:"null"}]。
 // 0.2.0 第一次装到宿主时就是因为 type 数组导致工具注册被拒、插件不激活；本地契约测试的
 // 校验器比宿主宽松，没抓到——tools/contract-test.mjs 现在也按宿主子集校验 schema。
-const nullable = (type) => ({ oneOf: [{ type }, { type: "null" }] });
+const nullable = (type: string) => ({ oneOf: [{ type }, { type: "null" }] });
 const nullableNumber = nullable("number");
 const nullableInteger = nullable("integer");
 const nullableString = nullable("string");
-const nullableObject = (properties, required, additionalProperties = false) => ({
+const nullableObject = (properties: any, required?: string[], additionalProperties = false) => ({
   oneOf: [
     { type: "object", properties, ...(required ? { required } : {}), additionalProperties },
     { type: "null" },
@@ -792,19 +823,19 @@ const recommendSchema = {
   additionalProperties: false,
 };
 
-function profileSummary(profile, presets, state = null) {
+function profileSummary(profile: any, presets: any, state: any = null): string {
   const lt = profile.longTerm ?? {};
-  const c = resolveConstraints(profile, presets);
+  const c: any = resolveConstraints(profile, presets);
   const lines = [];
   lines.push(`家庭：${profile.household?.size ?? "?"} 人（大人 ${profile.household?.adults ?? "?"}、小孩 ${profile.household?.children ?? 0}）`);
-  const likes = (lt.likes ?? []).map((l) => l.target).join("、") || "—";
-  const dislikes = (lt.dislikes ?? []).map((d) => `${d.target}${d.hard ? "(硬)" : ""}`).join("、") || "—";
-  const allergies = (lt.allergies ?? []).map((a) => `${a.target}${a.allergen ? `→${a.allergen}` : ""}`).join("、") || "—";
+  const likes = (lt.likes ?? []).map((l: any) => l.target).join("、") || "—";
+  const dislikes = (lt.dislikes ?? []).map((d: any) => `${d.target}${d.hard ? "(硬)" : ""}`).join("、") || "—";
+  const allergies = (lt.allergies ?? []).map((a: any) => `${a.target}${a.allergen ? `→${a.allergen}` : ""}`).join("、") || "—";
   lines.push(`长期：喜欢 ${likes}；不吃 ${dislikes}；过敏 ${allergies}`);
   const active = activePeriods(profile);
   if (active.length) {
     for (const p of active) {
-      const preset = presets[p.preset];
+      const preset = presets[p.preset ?? ""];
       lines.push(`周期：${p.label ?? preset?.label ?? p.preset}（${p.start ?? "—"} → ${p.end ?? "长期"}）${preset?.note ? ` · ${preset.note}` : ""}`);
     }
   } else {
@@ -823,11 +854,11 @@ function profileSummary(profile, presets, state = null) {
   if (c.avoidCanon?.size) lines.push(`忌口（两级语义）：${[...c.avoidCanon].join("、")}——主料含它们的菜会被换掉，配料级的菜照常推荐但省去该料（免 X 版）`);
   if (state) {
     const wants = openWants(state);
-    if (wants.length) lines.push(`想吃：${wants.map((w) => w.title).filter(Boolean).join("、")}`);
+    if (wants.length) lines.push(`想吃：${wants.map((w: any) => w.title).filter(Boolean).join("、")}`);
     const left = leftoversLine(state);
     if (left) lines.push(`冰箱里还有：${left}`);
     const v = verdicts(state);
-    if (v.never.size) lines.push(`不再做：${[...v.never].filter((x) => !/-\d{3}$/.test(x)).join("、")}`);
+    if (v.never.size) lines.push(`不再做：${[...v.never].filter((x: any) => !/-\d{3}$/.test(x)).join("、")}`);
     const cooks = (state.cookLog ?? []).length;
     if (cooks) lines.push(`做饭记录：${cooks} 次（最近一次 ${state.cookLog.at(-1)?.date ?? "?"}）`);
   }
@@ -835,16 +866,24 @@ function profileSummary(profile, presets, state = null) {
   return lines.join("\n");
 }
 
-function makeContext(config) {
-  const dataDir = config.dataDir || DEFAULT_DATA;
-  const profileFile = config.profileFile || join(dirname(dataDir), "profile.json");
-  const stateFile = config.stateFile || join(dirname(dataDir), "user-state.json");
+function makeContext(config: any) {
+  // 语料解析顺序：配置的 dataDir → 包内 data/（仓库布局）→ 都没有则回退随包
+  // data-sample（示例语料，只读地"能跑起来"）。回退时可写状态挪到
+  // ~/.dsh/recipe-homie/，绝不写进 node_modules。
+  const hasCorpus = (dir: string) => existsSync(join(dir, "recipes.processed.jsonl")) || existsSync(join(dir, "recipes.jsonl"));
+  const requested = config.dataDir || DEFAULT_DATA;
+  const sampleDir = join(PACKAGE_ROOT, "data-sample");
+  const sampleMode = !hasCorpus(requested) && hasCorpus(sampleDir);
+  const dataDir = sampleMode ? sampleDir : requested;
+  const stateDir = sampleMode ? join(homedir(), ".dsh", "recipe-homie") : dirname(requested);
+  const profileFile = config.profileFile || join(stateDir, "profile.json");
+  const stateFile = config.stateFile || join(stateDir, "user-state.json");
   const presetsFile = join(dataDir, "presets.json");
-  let book = null;
-  let planner = null;
-  let profile = null;
-  let state = null;
-  let profileStamp = null;
+  let book: any = null;
+  let planner: any = null;
+  let profile: any = null;
+  let state: any = null;
+  let profileStamp: string | null = null;
 
   const getBook = () => {
     if (!book) book = new RecipeBook(dataDir);
@@ -869,28 +908,28 @@ function makeContext(config) {
     }
     return planner;
   };
-  const save = (p) => {
+  const save = (p: any) => {
     profile = saveProfile(profileFile, p);
     planner = null;
     return profile;
   };
-  const saveState = (s) => {
+  const saveState = (s: any) => {
     state = saveStateFile(stateFile, s);
     planner = null;
     return state;
   };
-  const planFile = join(dataDir, "last-plan.json");
-  const savePlan = (result) => {
+  const planFile = join(sampleMode ? stateDir : dataDir, "last-plan.json");
+  const savePlan = (result: any) => {
     try {
       mkdirSync(dirname(planFile), { recursive: true });
       writeFileSync(planFile, JSON.stringify(result, null, 1), "utf8");
     } catch { /* 存不下也不影响回答 */ }
   };
 
-  return { getBook, getPresets, getProfile, getState, getPlanner, save, saveState, savePlan, profileFile, stateFile };
+  return { getBook, getPresets, getProfile, getState, getPlanner, save, saveState, savePlan, profileFile, stateFile, sampleMode };
 }
 
-export function registerTools(ctx, config = {}) {
+export function registerTools(ctx: HostContext, config: any = {}) {
   const c = makeContext(config);
 
   const search = {
@@ -920,7 +959,21 @@ export function registerTools(ctx, config = {}) {
       },
       additionalProperties: false,
     },
-    async execute(args = {}) {
+    async execute(args: {
+      ingredients?: any;
+      cuisine?: any;
+      chapter?: any;
+      method?: any;
+      flavor?: any;
+      q?: any;
+      match?: any;
+      skillTier?: any;
+      minProtein?: any;
+      maxKcal?: any;
+      respectProfile?: any;
+      limit?: any;
+      intent?: any;
+    } = {}) {
       const book = c.getBook();
       const limit = Math.min(50, Math.max(1, Number(args.limit) || Number(config.limit) || 8));
       const intent = args.intent === "fast" || args.intent === "learn" ? args.intent : null;
@@ -949,30 +1002,30 @@ export function registerTools(ctx, config = {}) {
 
       // 用户点名的词不做厨房排除：q=鱼肚 就是要鱼肚，别拿「贵价」挡回去（B2 只管顺带浮上来的）
       const named = cleanText(args.q) + (Array.isArray(args.ingredients) ? args.ingredients : args.ingredients ? [String(args.ingredients)] : [])
-        .map((s) => cleanText(s)).join("");
-      const kitchenExcluded = (r) => {
+        .map((s: any) => cleanText(s)).join("");
+      const kitchenExcluded = (r: any) => {
         if (/野味/.test(r.chapter ?? "") && !named.includes("野味")) return true;
-        const words = [];
+        const words: string[] = [];
         if (prof.kitchen?.excludeExotic !== false) words.push(...EXOTIC_INGREDIENTS);
         if (prof.kitchen?.excludeLuxury !== false) words.push(...LUXURY_INGREDIENTS);
-        return words.some((w) => !named.includes(w)
-          && ((r.title ?? "").includes(w) || (r.ingredients ?? []).some((i) => (i.name ?? "").includes(w) || i.canon === w)));
+        return words.some((w: any) => !named.includes(w)
+          && ((r.title ?? "").includes(w) || (r.ingredients ?? []).some((i: any) => (i.name ?? "").includes(w) || i.canon === w)));
       };
 
       // 过滤顺序（0.4.1）：批量/串行 → 画像 → 厨房。bulk 先分桶，61kg 的馆子批量方
       // 无论难不难都记在「隐藏」上，hint 才说得清（口径与菜单层 practical() 一致）。
       // respectProfile=false 时全部放开（0.4.1 裁决 4：厨房排除也不再兜底）。
-      let cons = null; // R2b：留着给 hitValue 标「免 X 版」（配料级忌口）
+      let cons: any = null; // R2b：留着给 hitValue 标「免 X 版」（配料级忌口）
       if (args.respectProfile !== false) {
         cons = resolveConstraints(prof, c.getPresets());
         if (intent === "learn") cons.allowTiers = new Set([...cons.allowTiers, "learn", "hard"]); // 学菜的晚上放开难度档
         const keep = [];
         for (const h of hits) {
           if (h.recipe.bulk || h.recipe.suspectTitle) { hiddenBulk++; continue; }
-          const s = scoreRecipe(h.recipe, cons);
+          const s: any = scoreRecipe(h.recipe, cons);
           if (s.score === -Infinity) {
             blocked++;
-            if (s.blocked.some((b) => b.includes("防御拦截"))) allergenGuard++;
+            if (s.blocked.some((b: any) => b.includes("防御拦截"))) allergenGuard++;
             continue;
           }
           if (kitchenExcluded(h.recipe)) { hiddenKitchen++; continue; }
@@ -983,7 +1036,7 @@ export function registerTools(ctx, config = {}) {
 
       // intent=fast：35 分钟内才值得饿着肚子等（§3.6，execute 内过滤，不动 query 层）
       if (intent === "fast") {
-        filtered = filtered.filter((h) => estimateMinutes(h.recipe) <= 35);
+        filtered = filtered.filter((h: any) => estimateMinutes(h.recipe) <= 35);
       }
 
       const hidden = hiddenBulk + hiddenKitchen;
@@ -1008,8 +1061,10 @@ export function registerTools(ctx, config = {}) {
         // 覆盖范围（0.4.1 裁决 9，E2 O9）：「南北」是书名不是省名，单列出来；
         // 并把「为什么没有佛跳墙」说破——不是检索不好，是没有闽菜分册
         const facets = book.facetsOf();
-        const provinces = facets.cuisines.filter((x) => x !== "南北");
-        const coverage = `《中国菜谱》${provinces.length} 个省分册（${provinces.join("、")}）+《中国南北名菜谱》，暂无闽菜等分册，所以没有佛跳墙这类菜`;
+        const provinces = facets.cuisines.filter((x: any) => x !== "南北");
+        const coverage = `《中国菜谱》${provinces.length} 个省分册（${provinces.join("、")}）+《中国南北名菜谱》，暂无闽菜等分册，所以没有佛跳墙这类菜${
+          c.sampleMode ? "。⚠️ 当前跑在随包示例语料上（不是全库）——在 profile 的 cordis.patch.yml 给 recipe-homie 条目配 dataDir 指向完整语料目录，重启即可查全" : ""
+        }`;
         const analysis = args.q ? book.analyzeQuery(String(args.q)) : { ingredients: [], methods: [], literal: false };
         const anchor = analysis.methods[0] ?? analysis.ingredients[0] ?? (analysis.literal && args.q ? String(args.q) : null);
         const neighbors = anchor && args.q
@@ -1027,7 +1082,7 @@ export function registerTools(ctx, config = {}) {
           };
         }
         const label = analysis.methods[0] ? `「${analysis.methods[0]}」` : analysis.ingredients[0] ? `「${analysis.ingredients[0]}」` : `「${String(args.q).trim()}」`;
-        const found = neighbors.length ? `；按${label}找到这些：${neighbors.map((n) => n.title).join("、")}` : "";
+        const found = neighbors.length ? `；按${label}找到这些：${neighbors.map((n: any) => n.title).join("、")}` : "";
         return {
           ...base,
           hits: [],
@@ -1044,6 +1099,7 @@ export function registerTools(ctx, config = {}) {
       //   结果全是相近字词放宽出来的，必须先说破，别装作命中（q=红烧肉 235 条 top1 烧肉三鲜）。
       //   隐藏说明（裁决 2/3）：批量配方与防御拦截各记一句，数字口径与菜单层一致。
       const notes = [];
+      if (c.sampleMode) notes.push("现在查的是随包示例语料，不是全库（要接全库：给 recipe-homie 配 dataDir）");
       if (args.q && !book.analyzeQuery(String(args.q)).literal) {
         notes.push(`没有完全命中「${String(args.q).trim()}」——库里还没收录这道菜，下面是按相近字词放宽找的，先看看对不对味`);
       }
@@ -1051,7 +1107,7 @@ export function registerTools(ctx, config = {}) {
       if (allergenGuard > 0) notes.push(`另有 ${allergenGuard} 道标题含虾/蟹/贝但过敏原未标注，已按你的过敏防御过滤`);
       return {
         ...base,
-        hits: top(filtered, limit).map((h) => hitValue(h, cons)),
+        hits: top(filtered, limit).map((h: any) => hitValue(h, cons)),
         neighbors: [],
         hint: { code: "ok", text: notes.length ? `${notes.join("；")}。` : null },
       };
@@ -1084,7 +1140,7 @@ export function registerTools(ctx, config = {}) {
       },
       additionalProperties: false,
     },
-    async execute(args = {}) {
+    async execute(args: { id?: any; title?: any } = {}) {
       const book = c.getBook();
       const r = args.id ? book.get(String(args.id)) : args.title ? book.findTitle(String(args.title)) : null;
       if (!r) {
@@ -1109,10 +1165,10 @@ export function registerTools(ctx, config = {}) {
         lastDays: days <= 30 ? days : null,
         loved: v.loved.has(r.id) || v.loved.has(r.title),
         never: v.never.has(r.id) || v.never.has(r.title),
-        want: wants.some((w) => w.title === r.title),
+        want: wants.some((w: any) => w.title === r.title),
       };
       // R2b：对着画像算这道菜的两级忌口——配料级给「免 X 版」提示，主料级说明为何不推荐
-      const cons = resolveConstraints(c.getProfile(), c.getPresets());
+      const cons: any = resolveConstraints(c.getProfile(), c.getPresets());
       return { found: true, recipe: recipeValue(r, cons), memory, suggestions: [] };
     },
     output: output(
@@ -1188,7 +1244,30 @@ export function registerTools(ctx, config = {}) {
       required: ["action"],
       additionalProperties: false,
     },
-    async execute(args = {}) {
+    async execute(args: {
+      action?: any;
+      target?: any;
+      kind?: any;
+      allergen?: any;
+      hard?: any;
+      weight?: any;
+      size?: any;
+      adults?: any;
+      children?: any;
+      confident?: any;
+      avoid?: any;
+      willing?: any;
+      diet?: any;
+      kitchen?: any;
+      equipment?: any;
+      preset?: any;
+      label?: any;
+      start?: any;
+      end?: any;
+      days?: any;
+      goals?: any;
+      note?: any;
+    } = {}) {
       const p = structuredClone(c.getProfile());
       const a = String(args.action);
       const today = new Date().toISOString().slice(0, 10);
@@ -1199,10 +1278,10 @@ export function registerTools(ctx, config = {}) {
         const target = String(args.target ?? "").trim();
         if (!target) return "需要 target：想吃的那道菜，或要记的那句话。";
         if (a === "add_want") {
-          s.wants = [...(s.wants ?? []).filter((w) => w.title !== target), { title: target, note: args.note ?? "", addedAt: today, satisfiedAt: null }];
+          s.wants = [...(s.wants ?? []).filter((w: any) => w.title !== target), { title: target, note: args.note ?? "", addedAt: today, satisfiedAt: null }];
         } else if (a === "satisfy_want") {
           let hit = false;
-          s.wants = (s.wants ?? []).map((w) => {
+          s.wants = (s.wants ?? []).map((w: any) => {
             if (!w.satisfiedAt && (w.title === target || w.title?.includes(target) || target.includes(w.title))) {
               hit = true;
               return { ...w, satisfiedAt: today };
@@ -1223,17 +1302,17 @@ export function registerTools(ctx, config = {}) {
         const target = String(args.target ?? "").trim();
         if (!target) return "需要 target：要记的食材名。";
         if (a === "allergy") {
-          p.longTerm.allergies = [...(p.longTerm.allergies ?? []).filter((x) => x.target !== target), { target, allergen: args.allergen ?? null }];
+          p.longTerm.allergies = [...(p.longTerm.allergies ?? []).filter((x: any) => x.target !== target), { target, allergen: args.allergen ?? null }];
         } else if (a === "like") {
-          p.longTerm.likes = [...(p.longTerm.likes ?? []).filter((x) => x.target !== target), { target, weight: Number(args.weight ?? 2) }];
+          p.longTerm.likes = [...(p.longTerm.likes ?? []).filter((x: any) => x.target !== target), { target, weight: Number(args.weight ?? 2) }];
         } else {
-          p.longTerm.dislikes = [...(p.longTerm.dislikes ?? []).filter((x) => x.target !== target), { target, weight: Number(args.weight ?? -2), hard: Boolean(args.hard) }];
+          p.longTerm.dislikes = [...(p.longTerm.dislikes ?? []).filter((x: any) => x.target !== target), { target, weight: Number(args.weight ?? -2), hard: Boolean(args.hard) }];
         }
       } else if (a === "remove") {
         const target = String(args.target ?? "");
         const kind = String(args.kind ?? "dislike");
         const key = kind === "allergy" ? "allergies" : kind === "like" ? "likes" : kind === "avoid" ? "avoid" : "dislikes";
-        p.longTerm[key] = (p.longTerm[key] ?? []).filter((x) => x.target !== target);
+        p.longTerm[key] = (p.longTerm[key] ?? []).filter((x: any) => x.target !== target);
       } else if (a === "set_skills") {
         p.skills = {
           confident: Array.isArray(args.confident) ? args.confident : p.skills.confident,
@@ -1250,7 +1329,7 @@ export function registerTools(ctx, config = {}) {
         const preset = String(args.preset ?? "");
         if (!c.getPresets()[preset]) return `preset 必须是：${Object.keys(c.getPresets()).join("、")}`;
         const end = args.end ?? (args.days ? new Date(Date.now() + Number(args.days) * 86400000).toISOString().slice(0, 10) : null);
-        p.periods = [...(p.periods ?? []).filter((x) => x.label !== (args.label ?? c.getPresets()[preset].label)), {
+        p.periods = [...(p.periods ?? []).filter((x: any) => x.label !== (args.label ?? c.getPresets()[preset].label)), {
           id: `${preset}-${today}`,
           label: args.label ?? c.getPresets()[preset].label,
           preset,
@@ -1263,7 +1342,7 @@ export function registerTools(ctx, config = {}) {
       } else if (a === "end_period") {
         const key = String(args.target ?? args.label ?? "");
         const before = (p.periods ?? []).length;
-        p.periods = (p.periods ?? []).filter((x) => x.label !== key && x.preset !== key);
+        p.periods = (p.periods ?? []).filter((x: any) => x.label !== key && x.preset !== key);
         if (p.periods.length === before) return `没有找到叫「${key}」的周期设置。用 profile_show 看看现有哪些。`;
       } else {
         return `不认识的 action：${a}`;
@@ -1307,15 +1386,23 @@ export function registerTools(ctx, config = {}) {
       },
       additionalProperties: false,
     },
-    async execute(args = {}) {
+    async execute(args: {
+      id?: any;
+      title?: any;
+      verdict?: any;
+      note?: any;
+      date?: any;
+      people?: any;
+      leftovers?: any;
+    } = {}) {
       const state = structuredClone(c.getState());
       const book = c.getBook();
       const r = args.id ? book.get(String(args.id)) : args.title ? book.findTitle(String(args.title)) : null;
       const title = r?.title ?? String(args.title ?? "").trim();
       if (!title) return "至少给我一个菜名或 id。";
 
-      const leftovers = (Array.isArray(args.leftovers) ? args.leftovers : []).map((l) => {
-        const e = lookup(String(l.name ?? ""));
+      const leftovers = (Array.isArray(args.leftovers) ? args.leftovers : []).map((l: any) => {
+        const e: any = lookup(String(l.name ?? ""));
         return {
           canon: e?.id ?? String(l.name ?? ""),
           name: String(l.name ?? ""),
@@ -1324,7 +1411,7 @@ export function registerTools(ctx, config = {}) {
           days: l.days ?? undefined,
           addedAt: args.date ?? new Date().toISOString().slice(0, 10),
         };
-      }).filter((l) => l.canon && l.grams);
+      }).filter((l: any) => l.canon && l.grams);
 
       state.cookLog = [...(state.cookLog ?? []), {
         date: args.date ?? new Date().toISOString().slice(0, 10),
@@ -1340,7 +1427,7 @@ export function registerTools(ctx, config = {}) {
       const lines = [`记下了：${title}（${args.verdict === "loved" ? "好吃" : args.verdict === "never" ? "以后不做了" : "还行"}）`];
       if (args.verdict === "never") lines.push("以后不会再推这道。");
       if (args.verdict === "loved") lines.push("以后会多排几次。");
-      if (leftovers.length) lines.push(`剩下的 ${leftovers.map((l) => `${l.name} ${Math.round(l.grams)}g`).join("、")} 记进冰箱了，下次采购会扣掉。`);
+      if (leftovers.length) lines.push(`剩下的 ${leftovers.map((l: any) => `${l.name} ${Math.round(l.grams)}g`).join("、")} 记进冰箱了，下次采购会扣掉。`);
       if (r && (r.servingsBase ?? 2) >= 4) lines.push("这道份量够两顿，明天可以带饭。");
       return lines.join("\n");
     },
@@ -1372,7 +1459,18 @@ export function registerTools(ctx, config = {}) {
       },
       additionalProperties: false,
     },
-    async execute(args = {}) {
+    async execute(args: {
+      days?: any;
+      people?: any;
+      meals?: any;
+      energy?: any;
+      maxMinutes?: any;
+      combo?: any;
+      seed?: any;
+      withShopping?: any;
+      intent?: any;
+      occasion?: any;
+    } = {}) {
       const planner = c.getPlanner();
       const result = planner.plan({
         days: Number(args.days ?? 3),
@@ -1422,7 +1520,17 @@ export function registerTools(ctx, config = {}) {
       },
       additionalProperties: false,
     },
-    async execute(args = {}) {
+    async execute(args: {
+      people?: any;
+      energy?: any;
+      maxMinutes?: any;
+      combo?: any;
+      excludeIds?: any;
+      rerollCount?: any;
+      seed?: any;
+      intent?: any;
+      occasion?: any;
+    } = {}) {
       const planner = c.getPlanner();
       return planner.shuffle({
         people: Number(args.people ?? planner.people),
@@ -1466,7 +1574,14 @@ export function registerTools(ctx, config = {}) {
       },
       additionalProperties: false,
     },
-    async execute(args = {}) {
+    async execute(args: {
+      scene?: any;
+      people?: any;
+      energy?: any;
+      maxMinutes?: any;
+      occasion?: any;
+      excludeIds?: any;
+    } = {}) {
       const planner = c.getPlanner();
       return planner.recommend({
         scene: args.scene,
@@ -1542,10 +1657,10 @@ export function registerTools(ctx, config = {}) {
       },
       additionalProperties: false,
     },
-    async execute(args = {}) {
+    async execute(args: { title?: any; dishes?: any; shopping?: any; notes?: any } = {}) {
       const book = c.getBook();
-      const cons = resolveConstraints(c.getProfile(), c.getPresets());
-      const ids = (Array.isArray(args.dishes) ? args.dishes : []).map((x) => String(x)).slice(0, 6);
+      const cons: any = resolveConstraints(c.getProfile(), c.getPresets());
+      const ids = (Array.isArray(args.dishes) ? args.dishes : []).map((x: any) => String(x)).slice(0, 6);
       const dishes = [];
       const missing = [];
       for (const id of ids) {
@@ -1555,14 +1670,14 @@ export function registerTools(ctx, config = {}) {
       }
       const shopping = (Array.isArray(args.shopping) ? args.shopping : [])
         .slice(0, 40)
-        .map((x) => ({
+        .map((x: any) => ({
           group: x?.group != null ? String(x.group) : null,
           name: String(x?.name ?? "").trim(),
           qty: x?.qty != null ? String(x.qty) : null,
           note: x?.note != null ? String(x.note) : null,
         }))
-        .filter((x) => x.name);
-      const notes = (Array.isArray(args.notes) ? args.notes : []).slice(0, 6).map((n) => String(n));
+        .filter((x: any) => x.name);
+      const notes = (Array.isArray(args.notes) ? args.notes : []).slice(0, 6).map((n: any) => String(n));
       const title = String(args.title ?? "").trim() || "这桌";
       if (!dishes.length) {
         return {
@@ -1587,6 +1702,6 @@ export function registerTools(ctx, config = {}) {
   return [ctx.tools.register(search), ctx.tools.register(get), ctx.tools.register(show), ctx.tools.register(update), ctx.tools.register(cookLog), ctx.tools.register(plan), ctx.tools.register(shuffle), ctx.tools.register(recommend), ctx.tools.register(rescue), ctx.tools.register(showCard)];
 }
 
-export function apply(ctx, config = {}) {
+export function apply(ctx: HostContext, config: any = {}) {
   ctx.effect(() => registerTools(ctx, config), "recipe-homie.tools()");
 }

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 原料本体：把 2,753 个 OCR 出来的叫法收敛成可检索、可采购、可做忌口判断的标准名。
  *
  * 每条：
@@ -10,7 +10,19 @@
  *   unitGrams 一只/一条大约多少克，用来把「鸡蛋 二只」折算进蛋白质和采购量
  *   aliases   OCR 里出现过或常见的异名
  */
-export const BASE = [
+export type LexEntry = {
+  id: string;
+  parent: string;
+  cat: string;
+  unit: string;
+  unitGrams?: number;
+  allergen?: string[];
+  note?: string;
+  aliases: string[];
+  guessed?: boolean;
+};
+
+export const BASE: LexEntry[] = [
   // ───────── 调味 ─────────
   { id: "盐", parent: "调味", cat: "调味", unit: "g", aliases: ["精盐", "粗盐", "食盐", "细盐", "盐末"] },
   { id: "酱油", parent: "调味", cat: "调味", unit: "g", aliases: ["白酱油", "红酱油", "深色酱油", "浅色酱油", "生抽", "老抽", "好酱油", "一级酱油"] },
@@ -308,10 +320,10 @@ export const BASE = [
  * 合并「子任务从真实用词里挖出来的补充词表」。
  * 同一 id 不新开一条，而是把别名并进去——否则 byId 会被后一条覆盖，基础别名反而丢失。
  */
-import { EXTRA } from "./lexicon-extra.mjs";
+import { EXTRA } from "./lexicon-extra.ts";
 
-export const CANON = (() => {
-  const map = new Map(BASE.map((e) => [e.id, { ...e, aliases: [...new Set([e.id, ...(e.aliases ?? [])])] }]));
+export const CANON: LexEntry[] = (() => {
+  const map = new Map(BASE.map((e): [string, LexEntry] => [e.id, { ...e, aliases: [...new Set([e.id, ...(e.aliases ?? [])])] }]));
   for (const x of EXTRA) {
     const cur = map.get(x.id);
     if (cur) {
@@ -331,7 +343,7 @@ export const CANON = (() => {
  * 猪肉末/绿豆芽」在 lexicon 里已归一成 排骨/挂面/大白菜/肉末/豆芽，这里只放标准名。
  * note 是印在清单上的那句人话。
  */
-export const PURCHASE_UNITS = {
+export const PURCHASE_UNITS: Record<string, { minBuy: number; note: string }> = {
   // ───── 肉禽：按块/按只卖，不零切 ─────
   猪肉: { minBuy: 250, note: "半斤起" },
   猪瘦肉: { minBuy: 250, note: "半斤起" },
@@ -442,7 +454,7 @@ export const PURCHASE_UNITS = {
 };
 
 /** 过敏原展示名 */
-export const ALLERGEN_LABEL = {
+export const ALLERGEN_LABEL: Record<string, string> = {
   甲壳类: "甲壳类（虾蟹）",
   贝类: "贝类（贝、鱿鱼、墨鱼）",
   鱼类: "鱼类",

@@ -1,0 +1,11 @@
+# 打包给 profile 安装时不需要的东西
+dist/
+tools/
+data/work/
+data/_smoke-profile.json
+data/_smoke-state.json
+data/last-plan.json
+data/ingredient-freq.json
+data/lexicon-groups.json
+data/
+

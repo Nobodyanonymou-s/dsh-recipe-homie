@@ -9,13 +9,13 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveConstraints, scoreRecipe, highFatMainLevel } from "./profile.mjs";
-import { recentCooks, verdicts, openWants, liveLeftovers } from "./state.mjs";
-import { estimateMinutes, tableNotes, energyBudget, breakfastAdvice, isPreparedIngredient } from "./care.mjs";
-import { PURCHASE_UNITS } from "./lexicon.mjs";
-import { lookup } from "./ingredients.mjs";
+import { resolveConstraints, scoreRecipe, highFatMainLevel } from "./profile.ts";
+import { recentCooks, verdicts, openWants, liveLeftovers } from "./state.ts";
+import { estimateMinutes, tableNotes, energyBudget, breakfastAdvice, isPreparedIngredient } from "./care.ts";
+import { PURCHASE_UNITS } from "./lexicon.ts";
+import { lookup } from "./ingredients.ts";
 
-function mulberry32(seed) {
+function mulberry32(seed: any) {
   let a = seed >>> 0;
   return () => {
     a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -36,11 +36,11 @@ const MEATY_TITLE_RE = /猪|鸡|鸭|牛|羊|鱼|虾|蟹|肉|火腿|腊|肠|肚|�
 const VEG_CHAPTER_RE = /素菜/;
 
 /** 是否仿真荤素菜（素菜章 + 荤腥标题 + 标题不带「素」 + 原料无肉 parent） */
-export function isMockMeatVeg(r) {
+export function isMockMeatVeg(r: any) {
   const title = r.title ?? "";
   if (!VEG_CHAPTER_RE.test(r.chapter ?? "") && !VEG_CHAPTER_RE.test(r.chapterRaw ?? "")) return false;
   if (!MEATY_TITLE_RE.test(title) || /素/.test(title)) return false;
-  if ((r.ingredients ?? []).some((i) => MEAT_PARENTS.has(i.parent))) return false;
+  if ((r.ingredients ?? []).some((i: any) => MEAT_PARENTS.has(i.parent))) return false;
   return true;
 }
 
@@ -68,19 +68,19 @@ const BAMBOO_RE = /笋|玉兰片/;
  * mockmeat 排最前：仿真荤菜的 vegCanon 只是一把配菜（焦熘肥肠 250g 面筋配 175g 笋菇豌豆），
  * 按 vegCanon 分型会把它们算进 fungi，跟着「非笋菇」的口径一起失真。
  */
-export function vegKind(r) {
+export function vegKind(r: any) {
   if (isMockMeatVeg(r)) return "mockmeat";
   const v = r.vegCanon ?? [];
-  if (v.some((x) => LEAFY.has(x))) return "leafy";
-  if (v.some((x) => STURDY_ROOT.has(x))) return "sturdy";
-  if (v.some((x) => FUNGI.has(x) || FUNGI_RE.test(x) || BAMBOO_RE.test(x))) return "fungi";
-  if (v.length === 0 && (r.ingredients ?? []).some((i) => i.parent === "蛋" || i.parent === "豆制品")) return "eggtofu";
+  if (v.some((x: any) => LEAFY.has(x))) return "leafy";
+  if (v.some((x: any) => STURDY_ROOT.has(x))) return "sturdy";
+  if (v.some((x: any) => FUNGI.has(x) || FUNGI_RE.test(x) || BAMBOO_RE.test(x))) return "fungi";
+  if (v.length === 0 && (r.ingredients ?? []).some((i: any) => i.parent === "蛋" || i.parent === "豆制品")) return "eggtofu";
   return "other";
 }
 
 /** 是否笋/菌菇菜（「非笋菇 ≥2 道」与 poolReport 的 nonFungiVeg 都按这个口径） */
-export function isFungiBamboo(r) {
-  return (r.vegCanon ?? []).some((x) => FUNGI.has(x) || FUNGI_RE.test(x) || BAMBOO_RE.test(x));
+export function isFungiBamboo(r: any) {
+  return (r.vegCanon ?? []).some((x: any) => FUNGI.has(x) || FUNGI_RE.test(x) || BAMBOO_RE.test(x));
 }
 
 // ───────── R19 食材种类预算（2026-10-31 用户补充） ─────────
@@ -93,8 +93,8 @@ export function isFungiBamboo(r) {
 const NON_VARIETY_CATS = new Set(["调味", "粮油", "油脂", "汤底", "其他"]);
 
 /** 一道菜的主辅料种类数（按 canon 去重；调料/粮油/油脂/汤底不计）。 */
-export function varietyCount(r) {
-  const seen = new Set();
+export function varietyCount(r: any) {
+  const seen = new Set<any>();
   for (const i of r.ingredients ?? []) {
     if (i.canon && !NON_VARIETY_CATS.has(i.cat)) seen.add(i.canon);
   }
@@ -102,7 +102,7 @@ export function varietyCount(r) {
 }
 
 /** 种类预算：人数少预算紧、宴请完全放开。tight = 人少的强约束档（极简菜给一点正向倾斜）。 */
-export function varietyBudget(people, occasion = "daily") {
+export function varietyBudget(people: any, occasion = "daily") {
   if (occasion === "banquet") return { cap: Infinity, weight: 0, tight: false };
   if (people <= 2) return { cap: 5, weight: 0.9, tight: true };
   if (people <= 4) return { cap: 7, weight: 0.5, tight: false };
@@ -110,30 +110,30 @@ export function varietyBudget(people, occasion = "daily") {
 }
 
 /** 软惩罚（只影响排序，不挡菜）：超预算按超出量×强度扣；tight 档下极简菜加分。 */
-export function varietyAdjust(count, budget) {
+export function varietyAdjust(count: any, budget: any) {
   if (Number.isFinite(budget.cap) && count > budget.cap) return -(count - budget.cap) * budget.weight;
   if (budget.tight && count <= 3) return 0.4;
   return 0;
 }
 
 /** 按种类预算重排一个池子（在副本上调 score，不动 scored 缓存；item 附带 variety 供输出）。 */
-function rankWithVariety(pool, vBudget) {
+function rankWithVariety(pool: any, vBudget: any) {
   return pool
-    .map((x) => {
+    .map((x: any) => {
       const variety = varietyCount(x.r);
       return { ...x, variety, score: x.score + varietyAdjust(variety, vBudget) };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((a: any, b: any) => b.score - a.score);
 }
 
 /** R20 的「为什么推它」：事实（时间/种类数/蛋白）+ 打分理由（画像/口味/技能）+ 记性，拼成一句人话。
  *  确定性：只从数据字段来，同一候选永远同一句。蛋白信息只说一遍——打分理由带评价（达标/接近）时用理由，否则用事实。 */
-function whyText(x, scene) {
+function whyText(x: any, scene: any) {
   const bits = [];
   const reasons = x.reasons ?? [];
   if (Number.isFinite(x.minutes)) bits.push(scene === "hungry" ? `${x.minutes} 分钟能上桌` : `约 ${x.minutes} 分钟`);
   bits.push(`${x.variety} 样主辅料`);
-  const proteinReason = reasons.find((t) => t.startsWith("蛋白"));
+  const proteinReason = reasons.find((t: any) => t.startsWith("蛋白"));
   if (proteinReason) bits.push(proteinReason);
   else if (Number.isFinite(x.r.perServing?.proteinGrams)) bits.push(`蛋白 ${Math.round(x.r.perServing.proteinGrams)}g/人`);
   for (const t of reasons) {
@@ -145,7 +145,7 @@ function whyText(x, scene) {
   return bits.filter(Boolean).join("，");
 }
 
-const COMBOS = {
+const COMBOS: Record<string, Array<{ role: string; n: number }>> = {
   "1菜1肉": [{ role: "protein", n: 1 }, { role: "veg", n: 1 }],
   "2菜1肉": [{ role: "protein", n: 1 }, { role: "veg", n: 2 }],
   "2菜2肉": [{ role: "protein", n: 2 }, { role: "veg", n: 2 }],
@@ -161,7 +161,7 @@ const SLOT_NAMES = ["午", "晚"];
  *   intent=learn → 等价 energy=good 且上限放到 180 分钟；tier 放开到 easy+learn
  *                  （hard 仍然要画像 allowTiers 允许——「炸麻烦」不该被一个参数绕过）
  */
-function resolveRunBudget(opts, allowTiers) {
+function resolveRunBudget(opts: any, allowTiers: any) {
   const intent = opts.intent === "fast" || opts.intent === "learn" ? opts.intent : null;
   const energy = opts.energy ?? (intent === "fast" ? "tired" : intent === "learn" ? "good" : "normal");
   const budget = energyBudget(energy);
@@ -181,7 +181,7 @@ function resolveRunBudget(opts, allowTiers) {
 }
 
 /** 按人数决定一餐配几个菜：2-3 人一菜一肉，4 人一荤两素，5-6 人两荤两素 */
-function autoCombo(people) {
+function autoCombo(people: any) {
   if (people <= 3) return [{ role: "protein", n: 1 }, { role: "veg", n: 1 }];
   if (people === 4) return [{ role: "protein", n: 1 }, { role: "veg", n: 2 }];
   return [{ role: "protein", n: 2 }, { role: "veg", n: 2 }];
@@ -195,12 +195,15 @@ const EXOTIC = new Set(["狗肉", "蛇", "果子狸", "穿山甲", "鹿", "狍�
 const LUXURY = new Set(["鱼翅", "鱼肚", "鱼唇", "明骨", "燕窝", "海参", "猴头", "鲍鱼", "鹿筋", "蛤士蟆", "熊掌", "鱼皮", "干贝"]);
 
 export class Planner {
-  /**
-   * @param {import("./query.mjs").RecipeBook} book
-   * @param {object} profile
-   * @param {object} presets  data/presets.json 的 presets
-   */
-  constructor(book, profile, presets = {}, state = null) {
+  book: any;
+  profile: any;
+  presets: any;
+  state: any;
+  people: any;
+  c: any;
+  scored: any[];
+
+  constructor(book: any, profile: any, presets: Record<string, any> = {}, state: any = null) {
     this.book = book;
     this.profile = profile;
     this.presets = presets;
@@ -211,7 +214,7 @@ export class Planner {
   }
 
   /** 日常可做性：份量、复杂度、食材可得性。宴席菜和野味默认剔除。 */
-  practical(r) {
+  practical(r: any) {
     const excludeExotic = this.profile.kitchen?.excludeExotic !== false;
     const excludeLuxury = this.profile.kitchen?.excludeLuxury !== false;
     if (!r.servingsBase || r.servingsBase > Math.max(6, this.people + 2)) return false;
@@ -226,21 +229,21 @@ export class Planner {
     if (BANQUET.test(r.title)) return false;
     if ((r.ingredients ?? []).length > 16) return false;
     if (/野味/.test(r.chapter ?? "")) return false;
-    const exoticHit = (set) => [...set].some((w) => (r.title ?? "").includes(w) || (r.ingredients ?? []).some((i) => (i.name ?? "").includes(w) || i.canon === w));
+    const exoticHit = (set: any) => [...set].some((w) => (r.title ?? "").includes(w) || (r.ingredients ?? []).some((i: any) => (i.name ?? "").includes(w) || i.canon === w));
     if (excludeExotic && exoticHit(EXOTIC)) return false;
     if (excludeLuxury && exoticHit(LUXURY)) return false;
     return true;
   }
 
-  isProteinDish(r) {
+  isProteinDish(r: any) {
     const p = r.proteinFoodGrams ?? 0;
     const v = r.vegGrams ?? 0;
     return p >= 100 && p >= v * 0.8;
   }
 
   /** 是不是一道素菜（§3.1.2）：有肉即 false；蔬菜量下限 80g；荤腥标题兜底。不再用蛋白排除蛋/豆制品。 */
-  isVegDish(r) {
-    if ((r.ingredients ?? []).some((i) => MEAT_PARENTS.has(i.parent))) return false;
+  isVegDish(r: any) {
+    if ((r.ingredients ?? []).some((i: any) => MEAT_PARENTS.has(i.parent))) return false;
     if ((r.vegGrams ?? 0) < 80) return false;
     // W5：仿真荤素菜放行（焦熘肥肠=面筋、腐乳扣肉=素火腿）——素菜章 + 无肉 parent 的，
     // 菜名借荤形不再是出池的理由；蔬菜量下限照样守（面筋/素鸡记在 proteinFoodGrams，
@@ -291,7 +294,7 @@ export class Planner {
   }
 
   /** 按「主料克数」分池，而不是按人均蛋白——人均会被大份菜稀释，分错池。顺序（§3.1.3）：汤 → 素 → 荤 → 配菜。 */
-  pools({ maxMinutes = 999, tiers = null } = {}) {
+  pools({ maxMinutes = 999, tiers = null }: Record<string, any> = {}) {
     const protein = [];
     const veg = [];
     const soup = [];
@@ -310,7 +313,7 @@ export class Planner {
         if (this.isVegDish(r)) veg.push(item);
         continue;
       }
-      const hasMeat = (r.ingredients ?? []).some((i) => MEAT_PARENTS.has(i.parent));
+      const hasMeat = (r.ingredients ?? []).some((i: any) => MEAT_PARENTS.has(i.parent));
       const isSoup = /汤|羹/.test(r.title) && prot < 150;
       if (isSoup) { soup.push(item); continue; }
       // 素菜判定先于荤：豆腐/面筋/蛋即使蛋白主料 ≥100g 也归素（修复"素菜池只剩笋菇"）
@@ -329,11 +332,11 @@ export class Planner {
   poolReport({ maxMinutes = 999, tiers = null } = {}) {
     const p = this.pools({ maxMinutes, tiers });
     const vegKinds = { leafy: 0, sturdy: 0, fungi: 0, mockmeat: 0, eggtofu: 0, other: 0 };
-    const canonCnt = new Map();
+    const canonCnt = new Map<any, number>();
     let nonFungiVeg = 0;
     let eggTofuDishes = 0;
     let vegSweetChapter = 0;
-    const samples = { leafy: [], sturdy: [], fungi: [], mockmeat: [] };
+    const samples = { leafy: [] as any[], sturdy: [] as any[], fungi: [] as any[], mockmeat: [] as any[] };
     for (const { r } of p.veg) {
       const k = vegKind(r);
       vegKinds[k] += 1;
@@ -342,7 +345,7 @@ export class Planner {
       if (k === "fungi" && samples.fungi.length < 8) samples.fungi.push(r.title);
       if (k === "mockmeat" && samples.mockmeat.length < 8) samples.mockmeat.push(r.title);
       if (!isFungiBamboo(r)) nonFungiVeg += 1;
-      if ((r.ingredients ?? []).some((i) => i.parent === "蛋" || i.parent === "豆制品")) eggTofuDishes += 1;
+      if ((r.ingredients ?? []).some((i: any) => i.parent === "蛋" || i.parent === "豆制品")) eggTofuDishes += 1;
       if (/甜菜/.test(r.chapter ?? "")) vegSweetChapter += 1;
       for (const v of r.vegCanon ?? []) canonCnt.set(v, (canonCnt.get(v) ?? 0) + 1);
     }
@@ -366,7 +369,7 @@ export class Planner {
    * 组一张周菜单。
    * @param {{days?:number, people?:number, meals?:number, combo?:string, seed?:number, startDate?:string, excludeIds?:string[], intent?:"fast"|"learn"}} opts
    */
-  plan(opts = {}) {
+  plan(opts: Record<string, any> = {}) {
     if (!this.c) this.refresh();
     const days = Math.max(1, Math.min(7, opts.days ?? 3));
     const people = opts.people ?? this.people;
@@ -378,19 +381,19 @@ export class Planner {
     const pools = this.pools({ maxMinutes, tiers });
     // R19 种类预算：按人数/场合缩放的软约束，只改选菜顺序不删菜（宴请放开）
     const vBudget = varietyBudget(people, opts.occasion === "banquet" ? "banquet" : "daily");
-    const isSturdyAll = (r) => {
+    const isSturdyAll = (r: any) => {
       const v = r.vegCanon ?? [];
-      return v.length > 0 && v.every((x) => STURDY.has(x));
+      return v.length > 0 && v.every((x: any) => STURDY.has(x));
     };
 
     const used = new Set(opts.excludeIds ?? []);
-    const usedProteinByDay = new Map();
-    const usedVegMainByDay = new Map();
-    const nonFungiVegIds = new Set(); // 整张菜单里非笋菇素菜（跨天去重，§3.1.4 规则 3）
-    const plan = [];
+    const usedProteinByDay = new Map<any, any>();
+    const usedVegMainByDay = new Map<any, any>();
+    const nonFungiVegIds = new Set<any>(); // 整张菜单里非笋菇素菜（跨天去重，§3.1.4 规则 3）
+    const plan: any[] = [];
     const notes = [];
 
-    const pick = (pool, filter) => {
+    const pick = (pool: any, filter?: any) => {
       // 你念叨过的菜优先落位：这是"被听见"最直接的方式
       for (const item of pool) {
         if (used.has(item.r.id)) continue;
@@ -413,19 +416,19 @@ export class Planner {
     const soupPool = rankWithVariety(pools.soup, vBudget);
 
     for (let d = 0; d < days; d++) {
-      const day = { day: d + 1, meals: [] };
+      const day: Record<string, any> = { day: d + 1, meals: [] };
       usedProteinByDay.set(d, new Set());
       usedVegMainByDay.set(d, new Set());
       for (let m = 0; m < meals; m++) {
-        const slot = { name: SLOT_NAMES[m] ?? `第${m + 1}餐`, dishes: [] };
-        const combo = opts.combo && days === 1 ? COMBOS[opts.combo] : autoCombo(people);
+        const slot: Record<string, any> = { name: SLOT_NAMES[m] ?? `第${m + 1}餐`, dishes: [] as any[] };
+        const combo = opts.combo && days === 1 ? COMBOS[opts.combo]! : autoCombo(people);
         const cap = Math.max(60, (this.c.proteinTarget || 30) * 1.8);
         for (const spec of combo) {
           const n = spec.n ?? 1;
           for (let k = 0; k < n; k++) {
             if (spec.role === "protein") {
-              const proteinOk = (r) => {
-                const soFar = slot.dishes.reduce((s, x) => s + (x.r.perServing?.proteinGrams ?? 0), 0);
+              const proteinOk = (r: any) => {
+                const soFar = slot.dishes.reduce((s: any, x: any) => s + (x.r.perServing?.proteinGrams ?? 0), 0);
                 if (soFar + (r.perServing?.proteinGrams ?? 0) > cap) return false;
                 const main = r.proteinCanon?.[0];
                 if (main && usedProteinByDay.get(d).has(main)) return false;
@@ -433,9 +436,9 @@ export class Planner {
                 return true;
               };
               // 学菜的晚上：每天头一道主菜优先挑战一道 learn/hard（§3.6）
-              let item = null;
+              let item: any = null;
               if (intent === "learn" && m === 0 && k === 0) {
-                item = pick(proteinPool, (r) => r.skill?.tier !== "easy" && proteinOk(r));
+                item = pick(proteinPool, (r: any) => r.skill?.tier !== "easy" && proteinOk(r));
               }
               if (!item) item = pick(proteinPool, proteinOk);
               if (item) {
@@ -449,7 +452,7 @@ export class Planner {
               // 整张菜单非笋菇素菜不足 2 道时先不挑笋菇类
               const later = d >= 2;
               const dayVegMain = usedVegMainByDay.get(d);
-              const vegOk = (r) => {
+              const vegOk = (r: any) => {
                 if (/甜菜/.test(r.chapter ?? "")) return false; // 甜菜守卫：甜品不当正餐
                 const main = r.vegCanon?.[0];
                 return !(main && dayVegMain.has(main));
@@ -457,13 +460,13 @@ export class Planner {
               const needNonFungi = nonFungiVegIds.size < 2;
               // mockmeat 的主料是面筋/素鸡（豆制品），耐放——第 3 天起正好顶上来
               const kindOrder = later ? ["sturdy", "fungi", "mockmeat", "eggtofu", "other"] : ["leafy", "sturdy", "fungi", "mockmeat", "eggtofu", "other"];
-              let item = null;
+              let item: any = null;
               for (const kind of kindOrder) {
                 if (later && kind === "leafy") continue; // 第 3 天起不吃绿叶（保鲜规则保留）
-                item = pick(vegPool, (r) => vegOk(r) && vegKind(r) === kind && (!needNonFungi || !isFungiBamboo(r)));
+                item = pick(vegPool, (r: any) => vegOk(r) && vegKind(r) === kind && (!needNonFungi || !isFungiBamboo(r)));
                 if (item) break;
               }
-              if (!item && later) item = pick(vegPool, (r) => vegOk(r) && isSturdyAll(r)); // 大白菜这类「耐放绿叶」放行
+              if (!item && later) item = pick(vegPool, (r: any) => vegOk(r) && isSturdyAll(r)); // 大白菜这类「耐放绿叶」放行
               if (!item) item = pick(vegPool, vegOk); // 兜底：别让素菜位空着
               if (item) {
                 const main = item.r.vegCanon?.[0];
@@ -484,13 +487,13 @@ export class Planner {
         // 蛋白不够就补一个蒸蛋/豆腐类小菜，而不是硬塞一道大荤
         const target = this.c.proteinTarget;
         if (target) {
-          const got = slot.dishes.reduce((s, x) => s + (x.r.perServing?.proteinGrams ?? 0), 0);
+          const got = slot.dishes.reduce((s: any, x: any) => s + (x.r.perServing?.proteinGrams ?? 0), 0);
           const gap = target - got;
           if (gap > target * 0.25) {
-            const fits = (r) => (r.perServing?.proteinGrams ?? 0) <= Math.max(15, gap * 1.8) && !slot.dishes.some((x) => x.r.id === r.id);
+            const fits = (r: any) => (r.perServing?.proteinGrams ?? 0) <= Math.max(15, gap * 1.8) && !slot.dishes.some((x: any) => x.r.id === r.id);
             // W5：先挑无肉的配菜（蒸蛋/豆腐/仿真荤），真没有才轮到混炒——不然减脂期补蛋白
             // 会补出一道五花肉小炒（肉丝炒葱头曾这样挤进 seed 42 的菜单）
-            const add = pick(pools.side, (r) => fits(r) && !(r.ingredients ?? []).some((i) => MEAT_PARENTS.has(i.parent)))
+            const add = pick(pools.side, (r: any) => fits(r) && !(r.ingredients ?? []).some((i: any) => MEAT_PARENTS.has(i.parent)))
               ?? pick(pools.side, fits);
             if (add) {
               slot.dishes.push({ ...add, role: "side" });
@@ -498,9 +501,9 @@ export class Planner {
             }
           }
         }
-        slot.proteinMain = slot.dishes.find((x) => x.role === "protein")?.r?.proteinCanon?.[0] ?? null;
-        slot.protein = Math.round(slot.dishes.reduce((s, x) => s + (x.r.perServing?.proteinGrams ?? 0), 0));
-        slot.kcal = Math.round(slot.dishes.reduce((s, x) => s + (x.r.perServing?.kcal ?? 0), 0));
+        slot.proteinMain = slot.dishes.find((x: any) => x.role === "protein")?.r?.proteinCanon?.[0] ?? null;
+        slot.protein = Math.round(slot.dishes.reduce((s: any, x: any) => s + (x.r.perServing?.proteinGrams ?? 0), 0));
+        slot.kcal = Math.round(slot.dishes.reduce((s: any, x: any) => s + (x.r.perServing?.kcal ?? 0), 0));
         day.meals.push(slot);
       }
       plan.push(day);
@@ -510,8 +513,8 @@ export class Planner {
     const proteinTarget = this.c.proteinPerDay ?? (this.c.proteinTarget ? this.c.proteinTarget * meals : null);
     const kcalTarget = this.c.kcalPerDay ?? (this.c.kcalTarget ? this.c.kcalTarget * meals : null);
     const dailyTotals = plan.map((d) => {
-      const protein = Math.round(d.meals.reduce((s, m) => s + m.protein, 0));
-      const kcal = Math.round(d.meals.reduce((s, m) => s + m.kcal, 0));
+      const protein = Math.round(d.meals.reduce((s: any, m: any) => s + m.protein, 0));
+      const kcal = Math.round(d.meals.reduce((s: any, m: any) => s + m.kcal, 0));
       return {
         day: d.day,
         protein,
@@ -532,11 +535,11 @@ export class Planner {
         : `今天是省事模式：只排了 ${maxMinutes} 分钟以内的菜。不想动就把其中一天顺延，别硬做。`);
     }
     if (proteinTarget != null) {
-      const gaps = dailyTotals.filter((t) => t.proteinGap < 0);
+      const gaps = dailyTotals.filter((t: any) => (t.proteinGap ?? 0) < 0);
       // 0.4.1 裁决 12：缺口给克数换算（鸡蛋 ≈7g 蛋白、无糖希腊酸奶 ≈14g/杯），
       // 只说「加个蛋」补不上 40g 的缺口
       if (gaps.length) notes.push(`菜单只管午晚两餐：${gaps.map((t) => {
-        const g = -t.proteinGap;
+        const g = -(t.proteinGap ?? 0);
         return `第${t.day}天蛋白还差${g}g（约等于 ${Math.max(1, Math.round(g / 7))} 个鸡蛋或 ${Math.max(1, Math.round(g / 14))} 杯无糖希腊酸奶）`;
       }).join("、")}——用早餐补上，别硬塞进晚饭。`);
     }
@@ -549,7 +552,7 @@ export class Planner {
 
     // 你念叨过的菜排进去了没有
     const wants = this.state ? openWants(this.state) : [];
-    const plannedTitles = new Set(plan.flatMap((d) => d.meals).flatMap((s) => s.dishes.map((x) => x.r.title)));
+    const plannedTitles = new Set(plan.flatMap((d) => d.meals).flatMap((s) => s.dishes.map((x: any) => x.r.title)));
     for (const w of wants) {
       if (plannedTitles.has(w.title)) notes.push(`排了你之前说想吃的「${w.title}」。`);
     }
@@ -583,9 +586,9 @@ export class Planner {
       startDate: opts.startDate ?? new Date().toISOString().slice(0, 10),
       plan: plan.map((d) => ({
         ...d,
-        meals: d.meals.map((s) => ({
+        meals: d.meals.map((s: any) => ({
           ...s,
-          dishes: s.dishes.map((x) => ({
+          dishes: s.dishes.map((x: any) => ({
             id: x.r.id,
             title: x.r.title,
             role: x.role,
@@ -599,7 +602,7 @@ export class Planner {
             proteinPerServing: x.r.perServing?.proteinGrams,
             kcalPerServing: x.r.perServing?.kcal,
             minutes: x.minutes,
-            hasMeat: (x.r.ingredients ?? []).some((i) => MEAT_PARENTS.has(i.parent)),
+            hasMeat: (x.r.ingredients ?? []).some((i: any) => MEAT_PARENTS.has(i.parent)),
             variety: x.variety ?? varietyCount(x.r), // R19：主辅料种类数（补蛋白的 side 位没过 rankWithVariety，兜底现算）
             isWant: Boolean(x.isWant),
             recentDays: x.recentDays,
@@ -622,11 +625,11 @@ export class Planner {
    * 反疲劳（§3.7，R11/R12）：一局只有两次机会（初摇 + 一次再摇）。第三次来摇不再给菜，
    * 转入问原因；想再摇只能重新开一局（rerollCount 从 0 传起，计数清零）。
    */
-  shuffle(opts = {}) {
+  shuffle(opts: Record<string, any> = {}) {
     if (!this.c) this.refresh();
     const people = opts.people ?? this.people;
     const comboKey = opts.combo ?? (people <= 3 ? "1菜1肉" : people <= 4 ? "2菜1肉" : "2菜2肉");
-    const combo = COMBOS[comboKey] ?? COMBOS["1菜1肉"];
+    const combo = COMBOS[comboKey] ?? COMBOS["1菜1肉"]!;
     const seed = opts.seed ?? Math.floor(Math.random() * 1e6);
     const rerollCount = opts.rerollCount ?? 0;
     const closed = rerollCount >= 2; // 这一局已经摇过两次：关闭摇的选项，问原因
@@ -638,7 +641,7 @@ export class Planner {
         intent: null,
         energy: opts.energy ?? "normal",
         maxMinutes: null,
-        dishes: [],
+        dishes: [] as any[],
         excludeIds: Array.isArray(opts.excludeIds) ? [...new Set(opts.excludeIds)] : [],
         rerollCount: 2,
         closed: true,
@@ -657,10 +660,10 @@ export class Planner {
       soup: rankWithVariety(pools.soup, vBudget),
     };
     const exclude = new Set(opts.excludeIds ?? []);
-    const picks = [];
+    const picks: any[] = [];
 
-    const take = (pool, role) => {
-      const avail = pool.filter((x) => !exclude.has(x.r.id) && !picks.some((p) => p.r.id === x.r.id)
+    const take = (pool: any, role: any) => {
+      const avail = pool.filter((x: any) => !exclude.has(x.r.id) && !picks.some((p) => p.r.id === x.r.id)
         && !(role === "veg" && /甜菜/.test(x.r.chapter ?? ""))); // 甜菜守卫：甜品不当正餐
       if (!avail.length) return null;
       const item = avail[Math.floor(rnd() * Math.min(avail.length, 40))];
@@ -691,7 +694,7 @@ export class Planner {
         chapter: p.r.chapter,
         skill: p.r.skill,
         minutes: p.minutes,
-        hasMeat: (p.r.ingredients ?? []).some((i) => MEAT_PARENTS.has(i.parent)),
+        hasMeat: (p.r.ingredients ?? []).some((i: any) => MEAT_PARENTS.has(i.parent)),
         variety: p.variety ?? varietyCount(p.r), // R19：主辅料种类数
         isWant: Boolean(p.isWant),
         recentDays: p.recentDays,
@@ -721,7 +724,7 @@ export class Planner {
    * 它不消耗随机挑战的两次机会——menu_shuffle 是「不想想」的随机收敛，这个是「给你选」。
    * @param {{scene?:"hungry"|"daily"|"learn", people?:number, energy?:string, maxMinutes?:number, occasion?:"daily"|"banquet", excludeIds?:string[], intent?:string}} opts
    */
-  recommend(opts = {}) {
+  recommend(opts: Record<string, any> = {}) {
     if (!this.c) this.refresh();
     const people = opts.people ?? this.people;
     const scene = opts.scene === "hungry" || opts.scene === "learn" ? opts.scene : "daily";
@@ -734,25 +737,25 @@ export class Planner {
     const exclude = new Set(opts.excludeIds ?? []);
     const pools = this.pools({ maxMinutes, tiers });
     const ranked = rankWithVariety([...pools.protein, ...pools.veg, ...pools.side], vBudget)
-      .filter((x) => !exclude.has(x.r.id))
-      .filter((x) => !/甜菜/.test(x.r.chapter ?? "")); // 甜菜守卫同款：甜品不当正餐候选
+      .filter((x: any) => !exclude.has(x.r.id))
+      .filter((x: any) => !/甜菜/.test(x.r.chapter ?? "")); // 甜菜守卫同款：甜品不当正餐候选
 
     // 多样性锚点：主技法 + 蛋白来源（素菜回退蔬菜主料的 parent）
-    const methodOf = (r) => (r.methods ?? [])[0] ?? null;
-    const sourceOf = (r) => {
+    const methodOf = (r: any) => (r.methods ?? [])[0] ?? null;
+    const sourceOf = (r: any) => {
       const main = (r.proteinCanon ?? [])[0];
-      const ing = main ? (r.ingredients ?? []).find((i) => i.canon === main) : null;
+      const ing = main ? (r.ingredients ?? []).find((i: any) => i.canon === main) : null;
       if (ing?.parent) return ing.parent;
       const veg = (r.vegCanon ?? [])[0];
-      const ving = veg ? (r.ingredients ?? []).find((i) => i.canon === veg) : null;
+      const ving = veg ? (r.ingredients ?? []).find((i: any) => i.canon === veg) : null;
       return ving?.parent ?? veg ?? null;
     };
-    const anchors = (x) => ({ m: methodOf(x.r), s: sourceOf(x.r) });
-    const pickedAnchors = [];
-    const picks = [];
+    const anchors = (x: any) => ({ m: methodOf(x.r), s: sourceOf(x.r) });
+    const pickedAnchors: any[] = [];
+    const picks: any[] = [];
     // 两档多样性：先要「蛋白来源与已选全不同」（用户感知的雷同主要来自同一种肉），
     // 池子撑不起再退到「技法或来源至少差一项」——R20 的底线。
-    const takeDiverse = (candidates) => {
+    const takeDiverse = (candidates: any) => {
       for (const strict of [true, false]) {
         for (const x of candidates) {
           if (picks.some((p) => p.r.id === x.r.id)) continue;
@@ -766,8 +769,8 @@ export class Planner {
       return false;
     };
     // 第 1 候选压轴：吃饭场景先给一道荤（今晚吃什么的默认直觉），学菜场景先给一道要练的
-    if (scene === "learn") takeDiverse(ranked.filter((x) => x.r.skill?.tier !== "easy"));
-    else takeDiverse(ranked.filter((x) => this.isProteinDish(x.r)));
+    if (scene === "learn") takeDiverse(ranked.filter((x: any) => x.r.skill?.tier !== "easy"));
+    else takeDiverse(ranked.filter((x: any) => this.isProteinDish(x.r)));
     while (picks.length < 3 && takeDiverse(ranked)) { /* 凑满 3 个 */ }
     // 池子撑不起严格多样性时放宽补位（不足 3 是数据现实，由 hint 说破，不装满）
     for (const x of ranked) {
@@ -835,7 +838,7 @@ const EGG_UNIT_GRAMS = 50;
  * buildShopping 与 tools/acceptance.mjs 共用这一份，两边的数永远对得上。
  * @param {Map<string,number>} need canon → 克数
  */
-export function alignPurchaseNeed(need) {
+export function alignPurchaseNeed(need: any) {
   const out = new Map();
   const merged = [];
   for (const [canon, grams] of need) {
@@ -860,7 +863,7 @@ export function alignPurchaseNeed(need) {
 // W5：计数单位估重（大众菜谱数据侧产物 intake-大众菜谱/est-unit-grams.json：118 行里 38 行有人工估值）。
 // 只在「原方只给个数、没给克数」时拿来折采购量；CANON 已有单重的（鸡蛋 50g、整鱼 350g）
 // 在 parse 阶段就折成克数了，不进这张表。表读不到时静默降级，照旧显示个数原文。
-let UNIT_EST = null;
+let UNIT_EST: any = null; // dev-workspace 耦合：包外 est-unit-grams.json，缺失时静默降级
 function unitGramsEst() {
   if (UNIT_EST) return UNIT_EST;
   UNIT_EST = new Map();
@@ -893,7 +896,7 @@ function unitGramsEst() {
  *   2. 预制/半成品原料（熟火腿、水发香菇）在分组行上标「买现成的」。
  *   3. 只给个数没给克数的行，用估值表折出约克数并标 unitGramsFrom="est-table"。
  */
-export function buildShopping(plan, people, pantry = new Map()) {
+export function buildShopping(plan: any, people: any, pantry = new Map()) {
   const est = unitGramsEst();
   const items = new Map(); // canon → { canon, cat, grams, count, unitGrams, days:Set, unknown, prep }
   const omittedTotals = new Map(); // canon → 克数（R2b：配料级忌口的料不出现在采购清单，只留一句说明）
@@ -902,7 +905,7 @@ export function buildShopping(plan, people, pantry = new Map()) {
       for (const dish of slot.dishes) {
         const r = typeof dish.r === "object" ? dish.r : dish;
         const scale = 1; // 原方量（见上）
-        const omitted = new Set((dish.omit ?? []).map((o) => o.target));
+        const omitted = new Set((dish.omit ?? []).map((o: any) => o.target));
         for (const ing of r.ingredients ?? []) {
           const key = ing.canon;
           if (!key || key === "水") continue;
@@ -985,8 +988,8 @@ export function buildShopping(plan, people, pantry = new Map()) {
   const eggRow = items.get(EGG_TARGET);
   if (eggRow && eggRow.grams > 0) eggRow.count = eggRow.grams / EGG_UNIT_GRAMS;
 
-  const round = (n) => (n >= 1000 ? Math.round(n / 100) * 100 : n >= 100 ? Math.round(n / 10) * 10 : Math.round(n));
-  const fmt = (o) => {
+  const round = (n: any) => (n >= 1000 ? Math.round(n / 100) * 100 : n >= 100 ? Math.round(n / 10) * 10 : Math.round(n));
+  const fmt = (o: any) => {
     if (o.grams > 0) {
       const g = round(o.grams);
       const base = g >= 1000 ? `${(g / 1000).toFixed(2)} kg` : `${g} g`;
@@ -1000,9 +1003,9 @@ export function buildShopping(plan, people, pantry = new Map()) {
   };
   // 行级备注：预制的说买现成的——油脂/调味/汤底这类本来就是买成品的料不提，免得满页都是
   const PREP_SKIP = new Set(["油脂", "调味", "汤底"]);
-  const noteOf = (o) => (o.prep && !PREP_SKIP.has(o.parent) ? "买现成的，别买生料回去自己发/自己煮" : undefined);
+  const noteOf = (o: any) => (o.prep && !PREP_SKIP.has(o.parent) ? "买现成的，别买生料回去自己发/自己煮" : undefined);
   // unitGramsFrom 只在「按个数折出来的约克数」那类行上有意义（克数行不靠它）
-  const row = (o, extra = {}) => ({
+  const row = (o: any, extra = {}) => ({
     name: o.canon,
     qty: fmt(o),
     cat: o.cat,
@@ -1022,7 +1025,7 @@ export function buildShopping(plan, people, pantry = new Map()) {
   const dry = list.filter((o) => ["粮油", "干货"].includes(o.cat) && !PANTRY.has(o.cat));
 
   // 蔬菜按用到它的天数分批：第 1–2 天一次，第 3–4 天一次，第 5–7 天一次
-  const batchOf = (o) => {
+  const batchOf = (o: any) => {
     const first = Math.min(...o.days);
     if (first <= 2) return 1;
     if (first <= 4) return 2;

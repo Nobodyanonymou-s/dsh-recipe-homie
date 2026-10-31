@@ -2,7 +2,7 @@
  * 本地冒烟：不经过宿主，把注册的工具各调一遍。
  * 用法：node tools/smoke.mjs
  */
-import { registerTools } from "../src/plugin.mjs";
+import { registerTools } from "../src/index.ts";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 

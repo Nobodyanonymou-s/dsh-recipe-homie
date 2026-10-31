@@ -5,12 +5,12 @@
  * 输入（全部只读）：
  *   ../china-food-composition-data/json_data_v3_20260825_qwen38max_kimi_k3_fixed_en/merged_*.json
  *     （《中国食物成分表》标准版第6版结构化数据，61 类 1,677 条；字段值为字符串，"Tr"→0、"—"→缺失）
- *   src/lexicon.mjs        —— CANON 标准食材词表（BASE + EXTRA 合并）
- *   src/ingredients.mjs    —— nutrition() 取现值（NUTRI_OVERRIDE > NUTRI_PARENT），p/f 冻结基准
+ *   src/lexicon.ts        —— CANON 标准食材词表（BASE + EXTRA 合并）
+ *   src/ingredients.ts    —— nutrition() 取现值（NUTRI_OVERRIDE > NUTRI_PARENT），p/f 冻结基准
  *   data/recipes.processed.jsonl —— 湿淀粉影响面统计（只读）
  *
  * 输出（覆写）：
- *   src/nutrition-ref.mjs          —— REF_OVERRIDES / REF_CATEGORIES / IMPORT_META（ITERATION-0.3.md §3 形状）
+ *   src/nutrition-ref.ts          —— REF_OVERRIDES / REF_CATEGORIES / IMPORT_META（ITERATION-0.3.md §3 形状）
  *   ../review-0.3/nutrition-import.md —— 导入报告
  *
  * 运行：node tools/nutrition-import.mjs（项目根，可重复执行，幂等覆盖）
@@ -30,15 +30,15 @@
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { CANON } from "../src/lexicon.mjs";
-import { nutrition } from "../src/ingredients.mjs";
+import { CANON } from "../src/lexicon.ts";
+import { nutrition } from "../src/ingredients.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const REF_DIR = path.resolve(
   ROOT,
   "../china-food-composition-data/json_data_v3_20260825_qwen38max_kimi_k3_fixed_en"
 );
-const OUT_MJS = path.join(ROOT, "src", "nutrition-ref.mjs");
+const OUT_MJS = path.join(ROOT, "src", "nutrition-ref.ts");
 const OUT_REPORT = path.resolve(ROOT, "..", "review-0.3", "nutrition-import.md");
 
 /* ───────────────────────── 参考数据加载与清洗 ───────────────────────── */
@@ -297,8 +297,8 @@ for (const r of recs)
     freq.set(i.canon, x);
   }
 
-// 18 个 NUTRI_PARENT 类目（从 ingredients.mjs 源码取键序，保证与现表一致）
-const src = readFileSync(path.join(ROOT, "src", "ingredients.mjs"), "utf8");
+// 18 个 NUTRI_PARENT 类目（从 ingredients.ts 源码取键序，保证与现表一致）
+const src = readFileSync(path.join(ROOT, "src", "ingredients.ts"), "utf8");
 const npBlock = src.match(/const NUTRI_PARENT = \{([\s\S]*?)\};/)[1];
 const CATS = [...npBlock.matchAll(/([^{}:\s,]+):\s*\[/g)].map((m) => m[1]);
 
@@ -534,7 +534,7 @@ const sixRows = SIX.map(([id, name, band]) => {
   return { id, name, stored: r.nutrition.kcal, a, per: Math.round(a / r.servingsBase), carb: Math.round(C * 10) / 10, band, in: a / r.servingsBase >= band[0] && a / r.servingsBase <= band[1] };
 });
 
-/* ───────────────────────── 生成 src/nutrition-ref.mjs ───────────────────────── */
+/* ───────────────────────── 生成 src/nutrition-ref.ts ───────────────────────── */
 
 const matchedCount = [...overrides.keys()].filter(
   (k) => !PURE_SUGARS.includes(k) && !FALLBACK_CARB[k] && !/无参考条目/.test(overrides.get(k).ref)
@@ -743,8 +743,8 @@ ${sixRows.every((x) => x.in) ? "六个样本全部落在 §5 验收区间内。"
 
 ## 8. 复跑与校验
 
-- 重跑：\`node tools/nutrition-import.mjs --calibrate\`（0.5 W7 起的口径：edible 回填 + p/f 校准；不带参数则回到 v0.3 冻结口径。覆写 \`src/nutrition-ref.mjs\` 与本报告；不碰 data/）。
-- 导入产物校验：\`node -e "import('./src/nutrition-ref.mjs').then(m => console.log(m.REF_OVERRIDES['莲子'], m.REF_CATEGORIES['蔬菜']))"\`。
+- 重跑：\`node tools/nutrition-import.mjs --calibrate\`（0.5 W7 起的口径：edible 回填 + p/f 校准；不带参数则回到 v0.3 冻结口径。覆写 \`src/nutrition-ref.ts\` 与本报告；不碰 data/）。
+- 导入产物校验：\`node -e "import('./src/nutrition-ref.ts').then(m => console.log(m.REF_OVERRIDES['莲子'], m.REF_CATEGORIES['蔬菜']))"\`。
 - 消费方（code-agent）：nutrition() 取值优先级 REF_OVERRIDES > NUTRI_OVERRIDE > REF_CATEGORIES > NUTRI_PARENT（§4 契约）。
 `;
 writeFileSync(OUT_REPORT, report, "utf8");

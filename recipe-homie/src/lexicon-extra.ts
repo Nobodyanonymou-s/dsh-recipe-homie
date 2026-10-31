@@ -2,7 +2,9 @@
  * 词表补充（由 tools/merge-lexicon.mjs 从 data/work/lexicon-additions.json 生成）。
  * 这些是子任务从 2,877 道菜的实际用词里挖出来的异名与新概念，别手改——改上游再重生成。
  */
-export const EXTRA = [
+import type { LexEntry } from "./lexicon.ts";
+
+export const EXTRA: LexEntry[] = [
   { id: "五柳料", parent: "蔬菜", cat: "干货", unit: "g", allergen: [], aliases: ["素五柳料"] },
   { id: "非食材辅料", parent: "其他", cat: "其他", unit: "g", allergen: [], aliases: ["柏树叶","稻草节（约三寸长）","废报纸","高粱秸","酒坛泥","酒坛泥（封坛口用的泥）","锯末","箬壳","纱纸","食用葫芦","透明纸","透明纸（玻璃纸）一大张","细麻绳","小竹扦"] },
   { id: "薄荷", parent: "蔬菜", cat: "蔬菜", unit: "g", allergen: [], aliases: [] },

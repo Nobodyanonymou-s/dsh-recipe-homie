@@ -8,7 +8,72 @@
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
-export const DEFAULT_PROFILE = {
+/** 周期目标的量化部分（preset.goals / period.goals 的公共形状；null = 不设限）。 */
+export interface PeriodGoals {
+  proteinPerServing?: number | null;
+  kcalPerServing?: number | null;
+  proteinPerDay?: number | null;
+  kcalPerDay?: number | null;
+  lowFat?: boolean;
+  lowSalt?: boolean;
+  [k: string]: any;
+}
+
+/** 周期模板（presets.example.json 的 presets 里一条；periods 用 preset 名引用）。 */
+export interface PresetDef {
+  label?: string;
+  goals?: PeriodGoals;
+  avoidMethods?: string[];
+  avoidCanon?: string[];
+  avoidAllergens?: string[];
+  blockParents?: string[];
+  preferMethods?: string[];
+  preferParents?: string[];
+  note?: string;
+  [k: string]: any;
+}
+
+export interface ProfileHousehold { size?: number; adults?: number; children?: number; note?: string; [k: string]: any }
+export interface ProfileLike { target: string; weight?: number; [k: string]: any }
+export interface ProfileDislike { target: string; weight?: number; hard?: boolean; [k: string]: any }
+export interface ProfileAllergy { target?: string; allergen?: string; [k: string]: any }
+export interface ProfileAvoidItem { target: string; [k: string]: any }
+export interface ProfileDiet { noPork?: boolean; vegetarian?: boolean; noBeef?: boolean; noSeafood?: boolean; halal?: boolean; [k: string]: any }
+export interface ProfilePeriod {
+  id?: string;
+  label?: string;
+  preset?: string;
+  start?: string;
+  end?: string;
+  goals?: PeriodGoals;
+  avoidCanon?: string[];
+  avoidMethods?: string[];
+  note?: string;
+  [k: string]: any;
+}
+export interface ProfileSkills { confident?: string[]; avoid?: string[]; willing?: string[]; [k: string]: any }
+export interface ProfileLongTerm {
+  likes?: ProfileLike[];
+  dislikes?: ProfileDislike[];
+  allergies?: ProfileAllergy[];
+  avoid?: ProfileAvoidItem[];
+  diet?: ProfileDiet;
+  [k: string]: any;
+}
+
+/** profile.json 的形状。字段全部可选：缺的由 DEFAULT_PROFILE / loadProfile 兜底。 */
+export interface Profile {
+  version?: number;
+  household?: ProfileHousehold;
+  longTerm?: ProfileLongTerm;
+  periods?: ProfilePeriod[];
+  skills?: ProfileSkills;
+  equipment?: string[];
+  updatedAt?: string | null;
+  [k: string]: any;
+}
+
+export const DEFAULT_PROFILE: Profile = {
   version: 1,
   household: { size: 2, adults: 2, children: 0, note: "" },
   longTerm: {
@@ -28,7 +93,7 @@ export const DEFAULT_PROFILE = {
   updatedAt: null,
 };
 
-export function loadProfile(file) {
+export function loadProfile(file: string | null | undefined): Profile {
   if (!file || !existsSync(file)) return structuredClone(DEFAULT_PROFILE);
   try {
     const p = JSON.parse(readFileSync(file, "utf8"));
@@ -38,14 +103,14 @@ export function loadProfile(file) {
   }
 }
 
-export function saveProfile(file, profile) {
+export function saveProfile(file: string, profile: Profile): Profile {
   profile.updatedAt = new Date().toISOString();
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(profile, null, 2), "utf8");
   return profile;
 }
 
-export function activePeriods(profile, now = new Date()) {
+export function activePeriods(profile: Profile, now = new Date()): ProfilePeriod[] {
   return (profile.periods ?? []).filter((p) => {
     const startOk = !p.start || new Date(p.start) <= now;
     const endOk = !p.end || new Date(`${p.end}T23:59:59`) >= now;
@@ -53,20 +118,45 @@ export function activePeriods(profile, now = new Date()) {
   });
 }
 
+/** resolveConstraints 的返回：planner 只认这个对象，不直接读 profile。 */
+export interface Constraints {
+  blockedAllergens: Set<string>;
+  blockedCanon: Set<string>;
+  avoidCanon: Set<string>;
+  blockedParents: Set<string>;
+  bannedMethods: Set<string>;
+  preferMethods: Set<string>;
+  preferParents: Set<string>;
+  softAvoid: Map<string, number>;
+  boost: Map<string, number>;
+  proteinTarget: number;
+  kcalTarget: number | null;
+  saltTarget: number | null;
+  proteinPerDay: number | null;
+  kcalPerDay: number | null;
+  lowFat: boolean;
+  allowTiers: Set<string>;
+  hardFromSkills: boolean;
+  people: number;
+  diet: ProfileDiet;
+  activePeriods: Array<string | undefined>;
+  notes: string[];
+}
+
 /**
  * 把画像压成一组可执行的约束。planner 只认这个对象，不直接读 profile。
  */
-export function resolveConstraints(profile, presets = {}, now = new Date()) {
-  const lt = profile.longTerm ?? {};
-  const blockedAllergens = new Set();
-  const blockedCanon = new Set();
-  const avoidCanon = new Set();  // 两级忌口（R2b）：主料级换菜，配料级省去（omit）
-  const bannedMethods = new Set();
-  const blockedParents = new Set();
-  const preferMethods = new Set();
-  const preferParents = new Set();
-  const softAvoid = new Map();   // canon → 权重（负）
-  const boost = new Map();       // parent → 权重（正）
+export function resolveConstraints(profile: Profile, presets: Record<string, PresetDef> = {}, now = new Date()): Constraints {
+  const lt: ProfileLongTerm = profile.longTerm ?? {};
+  const blockedAllergens = new Set<string>();
+  const blockedCanon = new Set<string>();
+  const avoidCanon = new Set<string>();  // 两级忌口（R2b）：主料级换菜，配料级省去（omit）
+  const bannedMethods = new Set<string>();
+  const blockedParents = new Set<string>();
+  const preferMethods = new Set<string>();
+  const preferParents = new Set<string>();
+  const softAvoid = new Map<string, number>();   // canon → 权重（负）
+  const boost = new Map<string, number>();       // parent → 权重（正）
 
   for (const a of lt.allergies ?? []) {
     if (a.allergen) blockedAllergens.add(a.allergen);
@@ -92,25 +182,25 @@ export function resolveConstraints(profile, presets = {}, now = new Date()) {
     if (GARLIC_FAMILY.includes(target)) for (const g of GARLIC_FAMILY) avoidCanon.add(g);
   }
 
-  const diet = lt.diet ?? {};
+  const diet: ProfileDiet = lt.diet ?? {};
   if (diet.vegetarian) for (const p of ["猪肉", "牛肉", "羊肉", "禽肉", "水产"]) blockedParents.add(p);
   if (diet.noPork) blockedParents.add("猪肉");
   if (diet.noBeef) blockedParents.add("牛肉");
   if (diet.noSeafood) blockedParents.add("水产");
 
   let proteinTarget = 0;
-  let kcalTarget = null;
-  let saltTarget = null;
+  let kcalTarget: number | null = null;
+  let saltTarget: number | null = null;
   // 天级目标（§3.2.1）：回退口径「每餐目标 × 餐数」会把 85g/天 判成超标，所以 periods 可直接给日目标
-  let proteinPerDay = null;
-  let kcalPerDay = null;
+  let proteinPerDay: number | null = null;
+  let kcalPerDay: number | null = null;
   let lowFat = false;
   const active = activePeriods(profile, now);
-  const notes = [];
+  const notes: string[] = [];
 
   for (const p of active) {
-    const preset = presets[p.preset] ?? {};
-    const goals = { ...(preset.goals ?? {}), ...(p.goals ?? {}) };
+    const preset: PresetDef = presets[p.preset!] ?? {};
+    const goals: PeriodGoals = { ...(preset.goals ?? {}), ...(p.goals ?? {}) };
     if (goals.proteinPerServing) proteinTarget = Math.max(proteinTarget, goals.proteinPerServing);
     if (goals.kcalPerServing) kcalTarget = Math.min(kcalTarget ?? Infinity, goals.kcalPerServing);
     if (goals.proteinPerDay) proteinPerDay = Math.max(proteinPerDay ?? 0, goals.proteinPerDay);
@@ -131,7 +221,7 @@ export function resolveConstraints(profile, presets = {}, now = new Date()) {
   }
 
   // 技能：用户明确"炸麻烦"，就不推炸
-  const skills = profile.skills ?? {};
+  const skills: ProfileSkills = profile.skills ?? {};
   const confident = new Set(skills.confident ?? []);
   const skillAvoid = new Set(skills.avoid ?? []);
   const allowTiers = new Set(["easy"]);
@@ -171,10 +261,63 @@ const LEAN_PARTS_RE = /里脊|通脊|鸡胸|鸡脯|牛腱|瘦猪肉|前腿精肉
 const HIGH_FAT_PARTS = new Set(["大肠", "肥肠", "猪肠", "板油", "肥膘", "五花肉", "猪油", "鸡油", "奶油", "黄油"]);
 const HIGH_FAT_RE = /大肠|肥肠|板油|肥膘|五花/;
 
+/** 画像层眼里的菜谱记录：只建模本文件用到的字段，其余原样透传（检索层/计划层都传这个形状）。 */
+export interface RecipeIngredientRecord {
+  /** 归一后的 canon id（parse 层保证一定有） */
+  canon: string;
+  /** 食材家族（猪肉/水产/蔬菜…） */
+  parent: string;
+  name?: string;
+  key?: string;
+  grams?: number | null;
+  consumedGrams?: number;
+  [k: string]: any;
+}
+
+export interface RecipeRecord {
+  id?: string;
+  title?: string;
+  ingredients?: RecipeIngredientRecord[];
+  allergens?: string[];
+  methods?: string[];
+  flavors?: string[];
+  proteinCanon?: string[];
+  totalGrams?: number;
+  servingsBase?: number;
+  skill?: { tier?: string; why?: string; [k: string]: any };
+  perServing?: { kcal?: number; proteinGrams?: number; [k: string]: any };
+  nutrition?: { saltGrams?: number; [k: string]: any };
+  [k: string]: any;
+}
+
+/** highFatMainLevel 的返回：main = 主料级，trace = 配料级，null = 没有高脂部位。 */
+export type HighFatLevel = "main" | "trace" | null;
+
+/** avoidLevel 的返回。null 表示这道菜根本没有该 canon。 */
+export interface AvoidLevelInfo {
+  level: "main" | "garnish";
+  grams: number | null;
+  why: string | null;
+}
+
+/** 配料级忌口条目（做「免 X 版」用）。 */
+export interface OmitInfo {
+  target: string;
+  grams: number | null;
+}
+
+/** scoreRecipe 的返回。 */
+export interface ScoreResult {
+  score: number;
+  blocked: string[];
+  reasons: string[];
+  omit: OmitInfo[];
+}
+
 /** 高脂部位的主料级判定（R2b 同款思路，verify-w58 检查12 教训）：
  *  吊汤用的 25g 肥膘是配料级（trace，轻罚）；整份肥肠/五花才是主料级（main，重罚+断言口径）。
  *  main = 标题点 named 高脂部位，或命中 canon 且（在 proteinCanon 里 或 克数 ≥ 全菜 5%）。 */
-export function highFatMainLevel(recipe) {
+export function highFatMainLevel(recipe: RecipeRecord): HighFatLevel {
   const ings = recipe.ingredients ?? [];
   // 烹调介质不算主料：油脂类目 / 带「约耗」的整锅油行（炒三丁的 500g 炸油占 54% 但只是介质）
   const hit = ings.find((i) => HIGH_FAT_PARTS.has(i.canon) && i.parent !== "油脂" && i.consumedGrams == null);
@@ -191,17 +334,17 @@ export function highFatMainLevel(recipe) {
 // 数据里有一批「标题自带虾/蟹/贝、allergens 却没标」的菜（虾油溜鱼片、蛋奶虾仁…）。
 // 标签补录在 0.5 W2；在那之前按标题字眼防御性拦截：标题含这类词而 allergens 缺标，
 // 就当作含该过敏原处理——只对「用户真的过敏于该类」的人生效，其他人不受影响。
-const TITLE_ALLERGEN_RULES = [
+const TITLE_ALLERGEN_RULES: Array<[RegExp, string]> = [
   [/虾/, "甲壳类"],
   [/蟹/, "甲壳类"],
   [/贝|蛤|蛏|蚶|蚬|蚌|蚝|蛎|鲍|淡菜|干贝/, "贝类"],
 ];
 
 /** 标题「含过敏词而 allergens 未标」推导出的过敏原集合（防御拦截用）。 */
-export function titleImpliedAllergens(recipe) {
+export function titleImpliedAllergens(recipe: RecipeRecord): Set<string> {
   const title = recipe.title ?? "";
   const declared = new Set(recipe.allergens ?? []);
-  const implied = new Set();
+  const implied = new Set<string>();
   for (const [re, allergen] of TITLE_ALLERGEN_RULES) {
     if (!declared.has(allergen) && re.test(title)) implied.add(allergen);
   }
@@ -219,18 +362,18 @@ const MAIN_PARENTS = new Set(["猪肉", "牛肉", "羊肉", "禽肉", "水产", 
  * ② 其克数 ≥ 全菜 totalGrams 的 15%。否则配料级。克数缺失时保守判主料级——宁换不错荐。
  * 返回 null 表示这道菜根本没有该 canon；返回 { level, grams, why }。
  */
-export function avoidLevel(recipe, canon) {
+export function avoidLevel(recipe: RecipeRecord, canon: string): AvoidLevelInfo | null {
   const hits = (recipe.ingredients ?? []).filter((i) => i.canon === canon);
   if (!hits.length) return null;
   const grams = hits.reduce((s, i) => s + (i.grams ?? 0), 0);
   if (!hits.every((i) => typeof i.grams === "number")) {
     return { level: "main", grams: null, why: "克数缺失，保守按主料" };
   }
-  if ((recipe.totalGrams ?? 0) > 0 && grams >= recipe.totalGrams * 0.15) {
-    return { level: "main", grams, why: `占全菜 ${Math.round((grams / recipe.totalGrams) * 100)}%` };
+  if ((recipe.totalGrams ?? 0) > 0 && grams >= recipe.totalGrams! * 0.15) {
+    return { level: "main", grams, why: `占全菜 ${Math.round((grams / recipe.totalGrams!) * 100)}%` };
   }
   // ① 主类目克数前二（跨类目一张榜：肉、菜、蛋豆同场按克数排序）
-  const agg = new Map();
+  const agg = new Map<string, number>();
   for (const i of recipe.ingredients ?? []) {
     if (!MAIN_PARENTS.has(i.parent)) continue;
     agg.set(i.canon, (agg.get(i.canon) ?? 0) + (typeof i.grams === "number" ? i.grams : 0));
@@ -242,8 +385,8 @@ export function avoidLevel(recipe, canon) {
 }
 
 /** 配料级忌口清单（做「免 X 版」用）：[{ target, grams }]。c 是 resolveConstraints 的结果。 */
-export function omitInfoFor(recipe, c) {
-  const out = [];
+export function omitInfoFor(recipe: RecipeRecord, c: Constraints | null | undefined): OmitInfo[] {
+  const out: OmitInfo[] = [];
   for (const canon of c?.avoidCanon ?? []) {
     const lv = avoidLevel(recipe, canon);
     if (lv?.level === "garnish") out.push({ target: canon, grams: lv.grams });
@@ -252,8 +395,8 @@ export function omitInfoFor(recipe, c) {
 }
 
 /** 主料级忌口清单（换菜理由用）：canon 名数组。 */
-export function mainAvoidFor(recipe, c) {
-  const out = [];
+export function mainAvoidFor(recipe: RecipeRecord, c: Constraints | null | undefined): string[] {
+  const out: string[] = [];
   for (const canon of c?.avoidCanon ?? []) {
     const lv = avoidLevel(recipe, canon);
     if (lv?.level === "main") out.push(canon);
@@ -262,10 +405,10 @@ export function mainAvoidFor(recipe, c) {
 }
 
 /** 给 planner 用：这道菜对这个人来不来得及做、能不能吃、爱不爱吃。 */
-export function scoreRecipe(recipe, c) {
+export function scoreRecipe(recipe: RecipeRecord, c: Constraints): ScoreResult {
   let score = 0;
-  const reasons = [];
-  const blocked = [];
+  const reasons: string[] = [];
+  const blocked: string[] = [];
 
   for (const a of recipe.allergens ?? []) {
     if (c.blockedAllergens.has(a)) blocked.push(`含过敏原：${a}`);
@@ -279,10 +422,10 @@ export function scoreRecipe(recipe, c) {
     if (c.blockedParents.has(i.parent)) blocked.push(`饮食限制：${i.parent}`);
   }
   // 两级忌口（R2b）：主料级 → 换一道菜（blocked 理由写清「主料」）；配料级 → 省去（omit 带料名+约克数）
-  const omit = [];
+  const omit: OmitInfo[] = [];
   for (const canon of c.avoidCanon ?? []) {
     if (!(recipe.ingredients ?? []).some((i) => i.canon === canon)) continue;
-    const lv = avoidLevel(recipe, canon);
+    const lv = avoidLevel(recipe, canon)!;
     if (lv.level === "main") blocked.push(`主料含忌口：${canon}（${lv.why}）`);
     else omit.push({ target: canon, grams: lv.grams });
   }
@@ -294,7 +437,7 @@ export function scoreRecipe(recipe, c) {
   for (const f of recipe.flavors ?? []) {
     if (c.bannedMethods.has(f)) blocked.push(`口味不合：${f}`);
   }
-  if (!c.allowTiers.has(recipe.skill?.tier)) blocked.push(`难度：${recipe.skill?.why ?? recipe.skill?.tier}`);
+  if (!c.allowTiers.has(recipe.skill?.tier!)) blocked.push(`难度：${recipe.skill?.why ?? recipe.skill?.tier}`);
   // 主料级高脂 × lowFat 的 block 必须在下方提前 return 之前 push（否则被难度先拦的菜带不上高脂理由）
   if (c.lowFat === true && highFatMainLevel(recipe) === "main") blocked.push("减脂期高脂主料（奶汤/肥肠类），换一道更合适");
   if (c.kcalTarget) {
@@ -316,17 +459,17 @@ export function scoreRecipe(recipe, c) {
   }
   if (c.kcalTarget && (recipe.perServing?.kcal ?? 0) > c.kcalTarget) {
     score -= 2;
-    reasons.push(`热量 ${recipe.perServing.kcal}kcal/人，超预算`);
+    reasons.push(`热量 ${recipe.perServing!.kcal}kcal/人，超预算`);
   }
   if (c.saltTarget && (recipe.nutrition?.saltGrams ?? 0) / (recipe.servingsBase || 4) > c.saltTarget) {
     score -= 1.5;
     reasons.push("盐偏多");
   }
   for (const i of recipe.ingredients ?? []) {
-    if (c.softAvoid.has(i.canon)) score += c.softAvoid.get(i.canon);
+    if (c.softAvoid.has(i.canon)) score += c.softAvoid.get(i.canon)!;
     // 长期喜好权重高于周期偏好（§3.3）：likes 不被周期 preset 挤掉，只被硬约束挡掉
-    if (c.boost.has(i.parent)) score += c.boost.get(i.parent) * 1.0;
-    if (c.boost.has(i.canon)) score += c.boost.get(i.canon) * 1.2;
+    if (c.boost.has(i.parent)) score += c.boost.get(i.parent)! * 1.0;
+    if (c.boost.has(i.canon)) score += c.boost.get(i.canon)! * 1.2;
   }
   for (const m of recipe.methods ?? []) {
     if (c.preferMethods.has(m)) score += 0.4;

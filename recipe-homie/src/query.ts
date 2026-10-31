@@ -10,8 +10,122 @@
  */
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { lookup } from "./ingredients.mjs";
-import { CANON } from "./lexicon.mjs";
+import { lookup } from "./ingredients.ts";
+import { CANON } from "./lexicon.ts";
+
+/** recipes.jsonl 一条原料里检索层用到的字段（其余字段原样透传，不在此建模）。 */
+export interface RecipeIngredient {
+  name?: string;
+  key?: string;
+  /** 归一后的 canon id（parse 层保证一定有） */
+  canon: string;
+  /** 食材家族（猪肉/水产/蔬菜…） */
+  parent: string;
+  grams?: number | null;
+  [k: string]: any;
+}
+
+export interface RecipeSkill {
+  tier?: string;
+  why?: string;
+  [k: string]: any;
+}
+
+export interface RecipePerServing {
+  kcal?: number;
+  proteinGrams?: number;
+  [k: string]: any;
+}
+
+/** recipes.jsonl 的一条菜谱记录。只建模检索层用到的字段，其余原样透传（索引签名兜底）。 */
+export interface Recipe {
+  id: string;
+  title: string;
+  ingredients: RecipeIngredient[];
+  methods: string[];
+  flavors: string[];
+  cuisine?: string;
+  chapter?: string;
+  book?: string;
+  page?: number;
+  features?: string;
+  skill?: RecipeSkill;
+  perServing?: RecipePerServing;
+  bulk?: boolean;
+  suspectTitle?: boolean;
+  [k: string]: any;
+}
+
+/** search()/searchWithTotal()/analyzeQuery() 的查询条件。 */
+export interface SearchQuery {
+  ingredients?: string[];
+  cuisine?: string;
+  chapter?: string;
+  method?: string;
+  flavor?: string;
+  q?: string;
+  /** 只在 search() 里生效；searchWithTotal() 不截断 */
+  limit?: number;
+  match?: "all" | "any";
+  skillTier?: string;
+  minProtein?: number;
+  maxKcal?: number;
+  [k: string]: any;
+}
+
+/** 一条命中：菜谱记录 + 打分。 */
+export interface SearchHit {
+  recipe: Recipe;
+  score: number;
+}
+
+/** analyzeQuery() 的返回：q 的检索线索。 */
+export interface Analysis {
+  /** q 里对上的库里 CANON id（lookup() 兜底猜的 guessed 条目不算锚点） */
+  ingredients: string[];
+  /** q 里对上的技法词（从数据派生） */
+  methods: string[];
+  /** 标题/特点/食材名里有没有 q 的子串（单字也算） */
+  literal: boolean;
+  /** 词表扩展出的检索词 */
+  expanded: string[];
+}
+
+/** neighbors() 的一条近邻。 */
+export interface Neighbor {
+  id: string;
+  title: string;
+  reason: string | null;
+}
+
+/** neighbors() 的可选过滤条件。 */
+export interface NeighborsOptions {
+  limit?: number;
+  cuisine?: string;
+  chapter?: string;
+  method?: string;
+}
+
+/** facetsOf() 的返回：从数据派生的可用维度。 */
+export interface Facets {
+  cuisines: string[];
+  chapters: string[];
+  methods: string[];
+}
+
+/** BM25 语料里的一篇文档（标题 + 特点 + 食材名的 bigram 词频）。 */
+interface Doc {
+  id: string;
+  len: number;
+  tf: Map<string, number>;
+}
+
+/** topNeighbors 的内部条目。 */
+interface NeighborCandidate {
+  r: Recipe;
+  score: number;
+  reason: string | null;
+}
 
 const ALIAS = new Map([
   ["五花肉", ["猪五花", "肋条肉", "方肉"]],
@@ -26,7 +140,7 @@ const ALIAS = new Map([
 ]);
 
 /** 检索键归一：去括号、去修饰前缀、去标点。 */
-export function normIngredient(text) {
+export function normIngredient(text: string | null | undefined): string {
   return String(text ?? "")
     .replace(/[（(].*?[）)]/g, "")
     .replace(/^(宰净|水发|水浸|浸发|熟|生|鲜|干|活|带皮|去皮|嫩|老|净)/, "")
@@ -39,15 +153,15 @@ export function normIngredient(text) {
 const SINGLE_CHAR_SUFFIX = new Set([..."肉丁丝片块条爪翅血肝肫架头皮骨油末"]);
 
 /** 变体与食材键的匹配。多字变体沿用双向 includes；单字变体收窄（见上）。 */
-function variantHitsKey(key, v) {
+function variantHitsKey(key: string, v: string): boolean {
   if (v.length === 1) {
     if (key === v) return true;
-    return key.length === 2 && key[0] === v && SINGLE_CHAR_SUFFIX.has(key[1]);
+    return key.length === 2 && key[0] === v && SINGLE_CHAR_SUFFIX.has(key[1]!);
   }
   return key.includes(v) || v.includes(key);
 }
 
-function expandQuery(name) {
+function expandQuery(name: string): string[] {
   const key = normIngredient(name);
   const out = new Set([key]);
   for (const [k, list] of ALIAS) {
@@ -63,9 +177,9 @@ function expandQuery(name) {
 const STOP = new Set(["的", "了", "和", "与", "把", "将", "用", "在", "上", "中", "后", "时", "成", "至", "约", "一", "二", "三"]);
 
 /** 中文按 bigram 切，够用且不用词典。 */
-function bigrams(text) {
+function bigrams(text: string): string[] {
   const clean = String(text ?? "").replace(/[^\u4e00-\u9fa5A-Za-z0-9]+/g, "");
-  const grams = [];
+  const grams: string[] = [];
   for (let i = 0; i < clean.length - 1; i++) {
     const g = clean.slice(i, i + 2);
     if (!STOP.has(g)) grams.push(g);
@@ -75,16 +189,17 @@ function bigrams(text) {
 }
 
 /** 代码点比较：所有「排序稳定」的地方用它，不依赖 locale。 */
-const cmpText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const cmpText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
 /** 清掉标点/空白，只留中文、英文、数字：q 进词表或做子串匹配前先过一遍。 */
-function cleanQuery(text) {
+function cleanQuery(text: string): string {
   return String(text ?? "").replace(/[^\u4e00-\u9fa5A-Za-z0-9]+/g, "");
 }
 
 // ───────────────────────── 词表索引（q 的锚点抽取） ─────────────────────────
 // 和 ingredients.mjs 的 byAlias 同一套优先级：先 id 再别名，后者覆盖前者。
-const TERM_ENTRY = new Map();
+type CanonEntry = (typeof CANON)[number];
+const TERM_ENTRY = new Map<string, CanonEntry>();
 for (const e of CANON) {
   TERM_ENTRY.set(e.id, e);
   for (const a of e.aliases ?? []) {
@@ -94,31 +209,31 @@ for (const e of CANON) {
 }
 // 长词优先：同一位置能匹配「清蒸」就不该只匹配「蒸」
 const VOCAB_TERMS = [...TERM_ENTRY.keys()].sort((a, b) => b.length - a.length || cmpText(a, b));
-const VOCAB_BY_FIRST = new Map();
+const VOCAB_BY_FIRST = new Map<string, string[]>();
 for (const term of VOCAB_TERMS) {
-  const head = term[0];
+  const head = term[0]!;
   if (!VOCAB_BY_FIRST.has(head)) VOCAB_BY_FIRST.set(head, []);
-  VOCAB_BY_FIRST.get(head).push(term);
+  VOCAB_BY_FIRST.get(head)!.push(term);
 }
 
 /**
  * q 里按最长匹配抽词表条目，返回 canon id（去重、按出现顺序）。
  * 词表里的条目都是真实收词，所以这里抽出来的 id 天然不是 lookup() 兜底猜的（guessed）。
  */
-function matchVocabulary(text) {
-  const out = [];
-  const seen = new Set();
+function matchVocabulary(text: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
   let i = 0;
   while (i < text.length) {
-    const cands = VOCAB_BY_FIRST.get(text[i]);
-    let hit = null;
+    const cands = VOCAB_BY_FIRST.get(text[i]!);
+    let hit: string | null = null;
     if (cands) {
       for (const term of cands) {
         if (text.startsWith(term, i)) { hit = term; break; }
       }
     }
     if (hit) {
-      const id = TERM_ENTRY.get(hit).id;
+      const id = TERM_ENTRY.get(hit)!.id;
       if (!seen.has(id)) { seen.add(id); out.push(id); }
       i += hit.length;
     } else {
@@ -129,7 +244,7 @@ function matchVocabulary(text) {
 }
 
 /** 一条菜谱在标题/食材名/特点里是否含这段字面。 */
-function literalFields(r, needle) {
+function literalFields(r: Recipe, needle: string) {
   return {
     title: (r.title ?? "").includes(needle),
     ingredient: (r.ingredients ?? []).some((i) => (i.name || i.key || "").includes(needle)),
@@ -138,16 +253,16 @@ function literalFields(r, needle) {
 }
 
 /** 字面命中打分：菜名 > 食材名 > 特点。 */
-function literalScore(r, needle) {
+function literalScore(r: Recipe, needle: string): number {
   const f = literalFields(r, needle);
   return (f.title ? 6 : 0) + (f.ingredient ? 4 : 0) + (f.features ? 2 : 0);
 }
 
 /** 近邻统一排序/截断：分数降序、id 升序，保证同输入同输出。 */
-function topNeighbors(list, cap) {
+function topNeighbors(list: NeighborCandidate[], cap: number): Neighbor[] {
   list.sort((a, b) => b.score - a.score || cmpText(a.r.id, b.r.id));
-  const out = [];
-  const seen = new Set();
+  const out: Neighbor[] = [];
+  const seen = new Set<string>();
   for (const item of list) {
     if (seen.has(item.r.id)) continue;
     seen.add(item.r.id);
@@ -158,20 +273,31 @@ function topNeighbors(list, cap) {
 }
 
 export class RecipeBook {
+  /** 当前用的数据文件（processed / base 里 mtime 新的那个） */
+  file: string;
+  mtime!: number;
+  recipes!: Recipe[];
+  byId!: Map<string, Recipe>;
+  docs!: Doc[];
+  docById!: Map<string, Doc>;
+  df!: Map<string, number>;
+  avgLen!: number;
+  methodWords!: string[];
+
   /** @param {string} dataDir 含 recipes.jsonl（或 recipes.processed.jsonl）的目录 */
-  constructor(dataDir) {
+  constructor(dataDir: string) {
     const processed = join(dataDir, "recipes.processed.jsonl");
     const base = join(dataDir, "recipes.jsonl");
-    if (!existsSync(base) && !existsSync(processed)) throw new Error(`找不到 ${base}，先跑 npm run build`);
+    if (!existsSync(base) && !existsSync(processed)) throw new Error(`语料目录里没有 recipes(.processed).jsonl：${dataDir}。仓库里跑 npm run data:build 重建；装好的包则在 profile 的 cordis.patch.yml 给 recipe-homie 条目配 dataDir 指向语料目录`);
     // 有集成产物就用它（包含补全、修复、新分册、变体关系）；两条都取一下，靠 mtime 挑新的
     const candidates = [processed, base].filter(existsSync).map((p) => ({ p, m: statSync(p).mtimeMs }));
     candidates.sort((a, b) => b.m - a.m);
-    this.file = candidates[0].p;
+    this.file = candidates[0]!.p;
     this.load();
   }
 
   /** 重建库/集成后不必重启宿主：下次查询发现文件变了（或出现更新的产物）就整体重载。 */
-  ensureFresh() {
+  ensureFresh(): void {
     const dir = dirname(this.file);
     const newest = [join(dir, "recipes.processed.jsonl"), join(dir, "recipes.jsonl")]
       .filter(existsSync)
@@ -184,20 +310,20 @@ export class RecipeBook {
     }
   }
 
-  load() {
+  load(): void {
     this.mtime = statSync(this.file).mtimeMs;
-    this.recipes = readFileSync(this.file, "utf8").trim().split("\n").map((l) => JSON.parse(l));
-    this.byId = new Map(this.recipes.map((r) => [r.id, r]));
+    this.recipes = readFileSync(this.file, "utf8").trim().split("\n").map((l) => JSON.parse(l) as Recipe);
+    this.byId = new Map(this.recipes.map((r): [string, Recipe] => [r.id, r]));
 
     // BM25 语料：标题 + 特点 + 食材名
     this.docs = this.recipes.map((r) => {
       const text = `${r.title} ${r.features ?? ""} ${r.ingredients.map((i) => i.key).join(" ")}`;
-      const tf = new Map();
+      const tf = new Map<string, number>();
       for (const g of bigrams(text)) tf.set(g, (tf.get(g) ?? 0) + 1);
       return { id: r.id, len: [...tf.values()].reduce((a, b) => a + b, 0), tf };
     });
-    this.docById = new Map(this.docs.map((d) => [d.id, d]));
-    this.df = new Map();
+    this.docById = new Map(this.docs.map((d): [string, Doc] => [d.id, d]));
+    this.df = new Map<string, number>();
     for (const d of this.docs) for (const g of d.tf.keys()) this.df.set(g, (this.df.get(g) ?? 0) + 1);
     this.avgLen = this.docs.reduce((s, d) => s + d.len, 0) / (this.docs.length || 1);
 
@@ -206,10 +332,10 @@ export class RecipeBook {
       .sort((a, b) => b.length - a.length || cmpText(a, b));
   }
 
-  bm25(query, k1 = 1.2, b = 0.75) {
+  bm25(query: string, k1 = 1.2, b = 0.75): Map<string, number> {
     const grams = bigrams(query);
     const N = this.docs.length;
-    const scores = new Map();
+    const scores = new Map<string, number>();
     for (const g of grams) {
       const df = this.df.get(g) ?? 0;
       if (!df) continue;
@@ -228,7 +354,7 @@ export class RecipeBook {
    * q 的检索分数：bigram/BM25 打底，词表锚点加分，bigram 一条都不中时退化到单字/子串匹配。
    * 返回 Map<recipeId, score>；一个都没有时返回空 Map（调用方据此走「没有命中」分支）。
    */
-  _textScores(q) {
+  _textScores(q: string): Map<string, number> {
     const scores = this.bm25(q);
     const analysis = this.analyzeQuery(q);
     const bigramHit = scores.size > 0;
@@ -260,7 +386,7 @@ export class RecipeBook {
    * 全量命中（不按 limit 截断），search() / searchWithTotal() 共用同一套筛选与打分。
    * @param {{ingredients?:string[], cuisine?:string, chapter?:string, method?:string, flavor?:string, q?:string, match?:'all'|'any', skillTier?:string, minProtein?:number, maxKcal?:number}} query
    */
-  _hits(query = {}) {
+  _hits(query: SearchQuery = {}): SearchHit[] {
     this.ensureFresh();
     const {
       ingredients = [],
@@ -272,7 +398,7 @@ export class RecipeBook {
     const wanted = ingredients.map(expandQuery);
     const textScores = q ? this._textScores(q) : null;
 
-    const hits = [];
+    const hits: SearchHit[] = [];
     for (const r of this.recipes) {
       if (cuisine && r.cuisine !== cuisine) continue;
       if (chapter && !(r.chapter ?? "").includes(chapter)) continue;
@@ -315,7 +441,7 @@ export class RecipeBook {
   /**
    * @param {{ingredients?:string[], cuisine?:string, chapter?:string, method?:string, flavor?:string, q?:string, limit?:number, match?:'all'|'any', skillTier?:string, minProtein?:number, maxKcal?:number}} query
    */
-  search(query = {}) {
+  search(query: SearchQuery = {}): SearchHit[] {
     const { limit = 8 } = query;
     return this._hits(query).slice(0, Math.max(1, Math.min(50, limit)));
   }
@@ -325,7 +451,7 @@ export class RecipeBook {
    * total = 截断前的命中数，也就是 hits.length，方便算「被画像挡掉多少」。
    * @returns {{hits: Array<{recipe: object, score: number}>, total: number}}
    */
-  searchWithTotal(query = {}) {
+  searchWithTotal(query: SearchQuery = {}): { hits: SearchHit[]; total: number } {
     const hits = this._hits(query);
     return { hits, total: hits.length };
   }
@@ -339,12 +465,12 @@ export class RecipeBook {
    *   literal:     标题/特点/食材名里有没有 q 的子串（单字也算）
    *   expanded:    词表扩展出的检索词（q=肉/鱼/鸡/汤 这类单字靠它）
    */
-  analyzeQuery(q) {
+  analyzeQuery(q: string): Analysis {
     this.ensureFresh();
     const text = cleanQuery(q);
 
-    const ingredients = [];
-    const seen = new Set();
+    const ingredients: string[] = [];
+    const seen = new Set<string>();
     for (const id of matchVocabulary(text)) {
       if (!seen.has(id)) { seen.add(id); ingredients.push(id); }
     }
@@ -364,12 +490,12 @@ export class RecipeBook {
   }
 
   /** q 里按最长匹配抽技法（-长词优先，避免「清蒸」被拆成「清」+「蒸」）。 */
-  _matchMethods(text) {
-    const out = [];
-    const seen = new Set();
+  _matchMethods(text: string): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
     let i = 0;
     while (i < text.length) {
-      let hit = null;
+      let hit: string | null = null;
       for (const m of this.methodWords) {
         if (text.startsWith(m, i)) { hit = m; break; }
       }
@@ -383,7 +509,7 @@ export class RecipeBook {
     return out;
   }
 
-  _hasLiteral(text) {
+  _hasLiteral(text: string): boolean {
     if (!text) return false;
     for (const r of this.recipes) {
       const f = literalFields(r, text);
@@ -393,10 +519,10 @@ export class RecipeBook {
   }
 
   /** 词表扩展词：有锚点给锚点+异名；没锚点就找「含 q 的词表条目」（单字查询靠这条腿）。 */
-  _expanded(text, ingredients) {
-    const out = [];
-    const seen = new Set();
-    const push = (t) => {
+  _expanded(text: string, ingredients: string[]): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const push = (t: unknown): void => {
       const v = String(t ?? "").replace(/\s+/g, "");
       if (v && !seen.has(v)) { seen.add(v); out.push(v); }
     };
@@ -429,7 +555,7 @@ export class RecipeBook {
    * @param {{limit?:number, cuisine?:string, chapter?:string, method?:string}} [opts]
    * @returns {Array<{id:string, title:string, reason:string}>}
    */
-  neighbors(q, { limit = 5, cuisine, chapter, method } = {}) {
+  neighbors(q: string, { limit = 5, cuisine, chapter, method }: NeighborsOptions = {}): Neighbor[] {
     this.ensureFresh();
     const cap = Math.max(1, Math.min(50, Math.floor(Number(limit)) || 5));
     const needle = cleanQuery(q);
@@ -444,11 +570,11 @@ export class RecipeBook {
 
     // 1) 字面近邻：子串命中，其次 bigram 相似度（同名字/近似名）
     const qGrams = new Set(bigrams(needle));
-    const literal = [];
+    const literal: NeighborCandidate[] = [];
     for (const r of pool) {
       const f = literalFields(r, needle);
       let score = 0;
-      let reason = null;
+      let reason: string | null = null;
       if (f.title) { score += 6; reason = `同名关键词『${needle}』`; }
       if (f.ingredient) { score += 4; reason = reason ?? `同名关键词『${needle}』`; }
       if (f.features) { score += 2; reason = reason ?? `同名关键词『${needle}』`; }
@@ -467,7 +593,7 @@ export class RecipeBook {
 
     // 2) 锚点近邻：食材按 canon、技法按 methods
     const analysis = this.analyzeQuery(needle);
-    const anchored = [];
+    const anchored: NeighborCandidate[] = [];
     if (analysis.ingredients.length) {
       const wanted = new Set(analysis.ingredients);
       for (const r of pool) {
@@ -486,16 +612,16 @@ export class RecipeBook {
   }
 
   /** 从数据派生的可用维度（去重、代码点排序，结果稳定）：hint 的「覆盖范围」用它，不硬编码分册名。 */
-  facetsOf() {
+  facetsOf(): Facets {
     this.ensureFresh();
     return {
-      cuisines: [...new Set(this.recipes.map((r) => r.cuisine).filter(Boolean))].sort(cmpText),
-      chapters: [...new Set(this.recipes.map((r) => r.chapter).filter(Boolean))].sort(cmpText),
+      cuisines: [...new Set(this.recipes.map((r) => r.cuisine).filter((c): c is string => Boolean(c)))].sort(cmpText),
+      chapters: [...new Set(this.recipes.map((r) => r.chapter).filter((c): c is string => Boolean(c)))].sort(cmpText),
       methods: [...new Set(this.recipes.flatMap((r) => r.methods ?? []))].sort(cmpText),
     };
   }
 
-  get(id) {
+  get(id: string): Recipe | null {
     this.ensureFresh();
     return this.byId.get(id) ?? null;
   }
@@ -505,10 +631,10 @@ export class RecipeBook {
    * 61kg 的无锡排骨不该再当第一结果（0.4.1 裁决 2，E3 S-F）。
    * 只有 bulk 版可用时仍返回它（数据不藏，只是不领路）。
    */
-  findTitle(title) {
+  findTitle(title: string): Recipe | undefined {
     this.ensureFresh();
     const t = String(title ?? "").replace(/\s+/g, "");
-    const presentable = (r) => !r.bulk && !r.suspectTitle;
+    const presentable = (r: Recipe) => !r.bulk && !r.suspectTitle;
     return this.recipes.find((r) => r.title === t && presentable(r))
       ?? this.recipes.find((r) => r.title.includes(t) && presentable(r))
       ?? this.recipes.find((r) => r.title === t)

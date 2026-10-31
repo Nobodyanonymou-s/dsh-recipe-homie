@@ -6,8 +6,8 @@
  * 口径：市制十两制 1斤=500g、1两=50g、1钱=5g、1分=0.5g（1959 年后）。
  * 用法：node tools/amounts-test.mjs   （或 npm run test:amounts）
  */
-import { parseAmount } from "../src/ingredients.mjs";
-import { toGrams, splitIngredient } from "../src/parse.mjs";
+import { parseAmount } from "../src/ingredients.ts";
+import { toGrams, splitIngredient } from "../src/parse.ts";
 
 let pass = 0;
 let fail = 0;

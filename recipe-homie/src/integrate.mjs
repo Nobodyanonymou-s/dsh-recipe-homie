@@ -16,9 +16,9 @@ import { readFileSync, writeFileSync, existsSync, statSync, mkdirSync } from "no
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { enrichRecipe } from "./enrich.mjs";
-import { consumedGramsOf } from "./parse.mjs";
-import { lookup, parseAmount } from "./ingredients.mjs";
-import { splitIngredient, deriveTags } from "./parse.mjs";
+import { consumedGramsOf } from "./parse.ts";
+import { lookup, parseAmount } from "./ingredients.ts";
+import { splitIngredient, deriveTags } from "./parse.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 // 允许用 FOODBOT_DATA_DIR 指向别处，方便用假数据测集成逻辑
@@ -387,7 +387,7 @@ for (const r of dazhong) {
   };
   rec.chapter = dazhongChapterOf(rec, r.chapter);
   // 技法/口味派生：省册在 parse、南北册在自家解析器里做，大众册没有上游标签——
-  // 在这里统一走 parse.mjs 的 deriveTags（同一套 METHOD_WORDS/FLAVOR_WORDS，
+  // 在这里统一走 parse.ts 的 deriveTags（同一套 METHOD_WORDS/FLAVOR_WORDS，
   // 不然 fat_loss 的口味拦截对大众册失明，B6 类守卫会漏）。features 传空：附注不是特点行。
   const tags = deriveTags(rec.title, "", rec.steps, rec.ingredients);
   rec.methods = tags.methods;

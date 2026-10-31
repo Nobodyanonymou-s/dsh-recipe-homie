@@ -23,9 +23,9 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { nutrition } from "../src/ingredients.mjs";
+import { nutrition } from "../src/ingredients.ts";
 import { isWetStarch, WET_STARCH_FACTOR, ediblePctOf, oilConsumedDeltaOf, OIL_ATTACHMENT } from "../src/enrich.mjs";
-import { IMPORT_META, REF_OVERRIDES } from "../src/nutrition-ref.mjs";
+import { IMPORT_META, REF_OVERRIDES } from "../src/nutrition-ref.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const DATA = process.env.FOODBOT_DATA_DIR ? resolve(process.env.FOODBOT_DATA_DIR) : join(ROOT, "data");
@@ -38,7 +38,7 @@ const L = readFileSync(file, "utf8").trim().split("\n").filter(Boolean).map((l) 
 
 // kcal=0 白名单：0.4 基线 11 道，ITERATION-0.5 W1（2026-10-29）修复其中 5 道：
 //   北京-098/128/185、广东-202 走 work/repairs.json（原料节在 OCR 原文存在，串位/丢节头丢掉了），
-//   上海-152 走 parse.mjs 脚注守卫（原料表中间的「* …制法：」脚注不再打断原料节）。
+//   上海-152 走 parse.ts 脚注守卫（原料表中间的「* …制法：」脚注不再打断原料节）。
 // 剩 6 道为 OCR 文本层不可恢复（清单在版面插图内或整节未被识别），主料无任何计量，修了也是假营养：
 const KCAL_ZERO_ALLOW = new Set([
   "上海-160", // 蜜枣扒山药：42.md「原 料」节头后直接是「制法」，清单未识别

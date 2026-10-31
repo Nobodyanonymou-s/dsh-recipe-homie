@@ -17,12 +17,12 @@
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { RecipeBook } from "../src/query.mjs";
-import { Planner, isFungiBamboo, vegKind } from "../src/planner.mjs";
-import { PURCHASE_UNITS } from "../src/lexicon.mjs";
-import { loadProfile, avoidLevel, highFatMainLevel } from "../src/profile.mjs";
-import { formatMenu } from "../src/plugin.mjs";
-import { rescueCandidates } from "../src/care.mjs";
+import { RecipeBook } from "../src/query.ts";
+import { Planner, isFungiBamboo, vegKind } from "../src/planner.ts";
+import { PURCHASE_UNITS } from "../src/lexicon.ts";
+import { loadProfile, avoidLevel, highFatMainLevel } from "../src/profile.ts";
+import { formatMenu } from "../src/index.ts";
+import { rescueCandidates } from "../src/care.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const presets = JSON.parse(readFileSync(`${ROOT}/data/presets.json`, "utf8")).presets;

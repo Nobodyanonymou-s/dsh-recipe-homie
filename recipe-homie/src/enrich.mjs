@@ -5,8 +5,8 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { nutrition } from "./ingredients.mjs";
-import { REF_OVERRIDES } from "./nutrition-ref.mjs";
+import { nutrition } from "./ingredients.ts";
+import { REF_OVERRIDES } from "./nutrition-ref.ts";
 
 /** W9lite 名菜 tier/minutes 人工标注（id → {tier, minutes, why}），缺文件时为空表。 */
 const TIER_OVERRIDES = (() => {
@@ -53,7 +53,7 @@ export function ediblePctOf(canon) {
 }
 
 /**
- * W6 约耗（ITERATION-0.5 W6）：原料行括号「约耗X／实耗X」由 parse.mjs 记进 consumedGrams。
+ * W6 约耗（ITERATION-0.5 W6）：原料行括号「约耗X／实耗X」由 parse.ts 记进 consumedGrams。
  * 脂肪口径保持与 v0.2/v0.3 同一表达式「全额脂肪 − 油脂整锅 ×0.85」，约耗行只加一项差额：
  *   oilConsumedDeltaOf(i) = 约耗值全额脂肪 − 该行整锅脂肪 ×15%
  * 这样无约耗的记录逐位等于旧值（不动历史数字），有约耗的记录从「整锅 ×15%」改成「约耗值全额」。

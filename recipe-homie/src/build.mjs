@@ -5,10 +5,10 @@
 import { readdirSync, readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseBook } from "./parse.mjs";
+import { parseBook } from "./parse.ts";
 import { enrichRecipe } from "./enrich.mjs";
 import { cleanupRecipe } from "./cleanup.mjs";
-import { LEXICON_STATS } from "./ingredients.mjs";
+import { LEXICON_STATS } from "./ingredients.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OCR = resolve(ROOT, "..", "OCR处理菜谱", "vibe_coding", "output");

@@ -65,7 +65,7 @@ const sandbox = {
   console,
 };
 vm.createContext(sandbox);
-vm.runInContext(readFileSync(`${ROOT}/client/client.js`, "utf8"), sandbox, { filename: "client.js" });
+vm.runInContext(readFileSync(`${ROOT}/lib/client.js`, "utf8"), sandbox, { filename: "client.js" });
 if (!factory) throw new Error("client bundle 没有调用 __ModuleLoader__.load");
 
 const mod = factory((name) => {

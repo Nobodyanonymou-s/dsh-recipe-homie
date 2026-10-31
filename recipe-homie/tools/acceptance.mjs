@@ -11,12 +11,12 @@ import { readFileSync, writeFileSync, rmSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { RecipeBook } from "../src/query.mjs";
-import { Planner, isFungiBamboo, isMockMeatVeg, vegKind, buildShopping, alignPurchaseNeed, EXOTIC_INGREDIENTS, LUXURY_INGREDIENTS } from "../src/planner.mjs";
-import { PURCHASE_UNITS } from "../src/lexicon.mjs";
-import { loadProfile, resolveConstraints, scoreRecipe, titleImpliedAllergens, avoidLevel, highFatMainLevel, DEFAULT_PROFILE } from "../src/profile.mjs";
-import { formatMenu, registerTools } from "../src/plugin.mjs";
-import { rescueCandidates, heavyPrepDependency, isPreparedIngredient } from "../src/care.mjs";
+import { RecipeBook } from "../src/query.ts";
+import { Planner, isFungiBamboo, isMockMeatVeg, vegKind, buildShopping, alignPurchaseNeed, EXOTIC_INGREDIENTS, LUXURY_INGREDIENTS } from "../src/planner.ts";
+import { PURCHASE_UNITS } from "../src/lexicon.ts";
+import { loadProfile, resolveConstraints, scoreRecipe, titleImpliedAllergens, avoidLevel, highFatMainLevel, DEFAULT_PROFILE } from "../src/profile.ts";
+import { formatMenu, registerTools } from "../src/index.ts";
+import { rescueCandidates, heavyPrepDependency, isPreparedIngredient } from "../src/care.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const presets = JSON.parse(readFileSync(`${ROOT}/data/presets.json`, "utf8")).presets;

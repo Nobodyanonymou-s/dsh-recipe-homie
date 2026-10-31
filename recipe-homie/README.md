@@ -8,7 +8,7 @@
 
 **菜谱是原材料，不是产品。** 仓库不含完整菜谱数据——数据派生自编者藏书 OCR，不分发。仓库带的是：
 
-- 处理管线：`src/parse.mjs`（OCR Markdown → 菜谱记录）→ `src/lexicon.mjs` + `src/ingredients.mjs`（原料归一、斤两→克）→ `src/enrich.mjs`（营养/难度/份量）→ `src/integrate.mjs`（合成 `data/recipes.processed.jsonl`）
+- 处理管线：`src/parse.ts`（OCR Markdown → 菜谱记录）→ `src/lexicon.ts` + `src/ingredients.ts`（原料归一、斤两→克）→ `src/enrich.mjs`（营养/难度/份量）→ `src/integrate.mjs`（合成 `data/recipes.processed.jsonl`）
 - 示例语料：`recipe-homie/data-sample/`（各品类抽样，克隆即用）；完整库自备书源跑 `build → integrate`
 
 插件和查询层按 mtime 自动读最新的数据文件，重建库不必重启宿主。
@@ -34,7 +34,7 @@
 
 ## 工具契约（三层）
 
-工具返回什么拆成三层（`src/plugin.mjs` 的 `output(schema, render, presentationMeta)`）：
+工具返回什么拆成三层（`src/index.ts` 的 `output(schema, render, presentationMeta)`）：
 
 | 层 | 给谁 | 是什么 |
 |---|---|---|
@@ -56,7 +56,7 @@
 
 DSH 里有三条路，按代价从低到高：纯文本（默认）→ **客户端 toolview 卡片**（本插件采用：Host 把 `presentationMeta` 持久化到 `tool/result.meta`，浏览器侧按工具名在 keyed slot `tool.call.toolview` 注册组件渲染）→ 独立页面/侧栏。
 
-容易踩的坑：**内置 Web Client 不消费 `presentCall`/`presentResult`**——要卡片必须自己提供浏览器半边（`client/client.js`，classic script，手写 `React.createElement`，无 JSX 无打包器）。
+容易踩的坑：**内置 Web Client 不消费 `presentCall`/`presentResult`**——要卡片必须自己提供浏览器半边（`src/client/index.ts`，编译为 classic script `lib/client.js`，手写 `React.createElement`、无 JSX）。
 
 卡片数据有界（用料 24、步骤 20、搜索 12 条，长字符串截到 220 字）；零命中分支不发空搜索卡（`presentationMeta === null`，回退文本）。
 
@@ -66,8 +66,8 @@ DSH 里有三条路，按代价从低到高：纯文本（默认）→ **客户�
 
 不是把文案写温柔，是几件可执行的事：
 
-- **记性**（`src/state.mjs` + `cook_log`）：`never` 的菜永久不再出现；`loved` 加权；近期做过的降权；「想吃」进 `wants`，规划时优先落位，排不进去时直说，不装没看见
-- **退路**（`src/care.mjs`）：精力 `tired` 只收 35 分钟内的；`cook_rescue` 只从已过画像过滤的候选里挑；菜单末尾永远有一句「哪天不想做就顺延，菜单是备选不是任务」
+- **记性**（`src/state.ts` + `cook_log`）：`never` 的菜永久不再出现；`loved` 加权；近期做过的降权；「想吃」进 `wants`，规划时优先落位，排不进去时直说，不装没看见
+- **退路**（`src/care.ts`）：精力 `tired` 只收 35 分钟内的；`cook_rescue` 只从已过画像过滤的候选里挑；菜单末尾永远有一句「哪天不想做就顺延，菜单是备选不是任务」
 - **不浪费**：`cook_log` 记的剩料进「冰箱里还有」，下次采购按克数扣掉；份量够两顿的菜提示带饭
 - **桌上的人**：有小孩且菜里有辣椒 →「孩子那份先盛出来」；孕期 + 含酒/硝水 → 给具体动作；低盐周期 →「盐比原方减三分之一，起锅前尝一下」
 
@@ -77,20 +77,20 @@ DSH 里有三条路，按代价从低到高：纯文本（默认）→ **客户�
 
 ```
 data/recipes.processed.jsonl   菜谱（原文 + 归一原料 + 营养/难度/份量）
-src/lexicon.mjs                原料本体：标准名 ← 异名/形态词/修饰词
+src/lexicon.ts                原料本体：标准名 ← 异名/形态词/修饰词
 profile.json                   用户画像：长期偏好 + 有窗口的周期需求
 ```
 
 | 文件 | 职责 |
 |---|---|
-| `parse.mjs` | OCR Markdown → 菜谱记录，忠实原文 |
-| `lexicon.mjs` | 原料标准名、别名、上位类、过敏原 |
-| `ingredients.mjs` | 名称归一、分量→克、营养估算（优先成分表导入值） |
+| `parse.ts` | OCR Markdown → 菜谱记录，忠实原文 |
+| `lexicon.ts` | 原料标准名、别名、上位类、过敏原 |
+| `ingredients.ts` | 名称归一、分量→克、营养估算（优先成分表导入值） |
 | `enrich.mjs` | 派生层：蛋白/碳水/热量、份量人数、技法难度、过敏原 |
-| `query.mjs` | 倒排 + BM25；只依赖数据文件，可独立复用 |
-| `profile.mjs` | 画像读存、周期生效判断、约束解析、单菜打分 |
-| `planner.mjs` | 菜单规划、采购清单、随机挑战 |
-| `plugin.mjs` | DSH 工具层（不碰 UI/网络） |
+| `query.ts` | 倒排 + BM25；只依赖数据文件，可独立复用 |
+| `profile.ts` | 画像读存、周期生效判断、约束解析、单菜打分 |
+| `planner.ts` | 菜单规划、采购清单、随机挑战 |
+| `index.ts` | DSH 工具层（不碰 UI/网络） |
 
 ## 原料归一
 
@@ -110,7 +110,7 @@ profile.json                   用户画像：长期偏好 + 有窗口的周期�
 
 ## 营养口径（粗估，用于排序和提示，不是营养标签）
 
-- 蛋白/脂肪/碳水逐条食材取值：优先《中国食物成分表》标准版第 6 版的结构化数据（社区整理、LLM 识图校正版，导入到 `src/nutrition-ref.mjs`；**识图校正可能有错，个别条目与纸质原表有出入**），没覆盖的回落到类目默认值
+- 蛋白/脂肪/碳水逐条食材取值：优先《中国食物成分表》标准版第 6 版的结构化数据（社区整理、LLM 识图校正版，导入到 `src/nutrition-ref.ts`；**识图校正可能有错，个别条目与纸质原表有出入**），没覆盖的回落到类目默认值
 - 热量 = 蛋白×4 + 碳水×4 + 脂肪×9；湿淀粉按干物质 0.35 折算
 - 营养计算按成分表可食部%（整鸡 63%、鳙鱼 61% 等）；配料表原文克数仍是毛重照登
 - 份量：按各类食材「够几个人」取最大值，2–8 人
@@ -143,7 +143,7 @@ profile.json                   用户画像：长期偏好 + 有窗口的周期�
 - 忌口两级语义：**主料级换菜**（该原料在本菜主类目克数前二，或 ≥ 全菜 15%；克数缺失保守算主料），**配料级照常推荐但省去该料**（「免 X 版：省去 X（约 N g）」，采购清单自动剔除）；**过敏不适用两级**——任何含量任何做法都硬拦
 - 硬忌口按食材家族生效：忌「大蒜」同株的蒜苗/青蒜一并算
 
-## 规划规则（`planner.mjs`）
+## 规划规则（`planner.ts`）
 
 1. **叶菜只在前 2 天**，之后换根茎/瓜/菌菇/豆制品（一次买菜撑不了一周）
 2. **肉、水产一次买够**，按整块/整只算，回家分装冷冻；采购清单凑整到可买份量（青菜 50g→300g），熟制原料标「买现成的」
@@ -173,16 +173,18 @@ profile.json                   用户画像：长期偏好 + 有窗口的周期�
 ## 本地跑
 
 ```sh
-node src/build.mjs                 # 建库（自备书源）
-node src/integrate.mjs             # 合并 work/* 产物
-node tools/smoke.mjs               # 工具冒烟
-node tools/contract-test.mjs       # 契约用例（分支 + schema + 卡片往返）
+pnpm install                       # 装类型/构建依赖（@deepseek-ai/* 只作 devDep，编译期用）
+pnpm check                         # typecheck + 构建 lib/ + 冒烟 + 契约用例
+pnpm data:build                    # 建库（自备书源；数据管线，产出语料不动代码）
+pnpm data:integrate                # 合并 work/* 产物
 node tools/test-client.mjs         # 客户端卡片（假 React + 假 ModuleLoader）
 node tools/acceptance.mjs          # 端到端断言
 node tools/nutrition-check.mjs     # 营养不变量闸门
 node tools/pool-report.mjs         # 素菜池构成
 node tools/audit.mjs               # 数据审计
 ```
+
+> 0.7.0 起 TypeScript 编译发布：源码 `src/*.ts` → tsdown 双目标（node ESM `lib/` + 浏览器 classic script `lib/client.js`），装机需 dsh ≥0.2.1。数据管线（`src/build.mjs` 等 4 个）保持 .mjs，由 node ≥22.18 原生 type stripping 直跑 `src/*.ts`。
 
 ## 安装（包挂载，带浏览器卡片）
 
@@ -192,9 +194,11 @@ node tools/audit.mjs               # 数据审计
 dsh plugin --profile desktop add "https://github.com/Nobodyanonymou-s/dsh-recipe-homie#path:recipe-homie"
 ```
 
-或本地 tarball：`npm pack --pack-destination ./dist` 后 `dsh plugin add ./dist/dsh-recipe-homie-<version>.tgz`。
+> 0.7.0 起为 TS 包：git 安装会现场跑 `prepare` 构建 `lib/`。pnpm ≥10 第一次 add 会被拦，往该 profile 的 `pnpm-workspace.yaml` 加 `allowBuilds: { "dsh-recipe-homie": true }` 后重跑 add（等于授权装机时执行本包代码，建议钉 commit）。
 
-`cordis.patch.yml` 的 `config.dataDir` 指向你自己的语料目录（可写——画像与状态写在旁边）；改代码要重打包重装重启，重建数据什么都不用做（mtime 自动重载）。
+或本地 tarball（预编译、免 allowBuilds）：`pnpm pack` 后 `dsh plugin add ./dsh-recipe-homie-0.7.0.tgz`。
+
+`cordis.patch.yml` 的 `config.dataDir` 指向你自己的语料目录（**画像 `profile.json` 与状态 `user-state.json` 写在 dataDir 的上一级**，不在 data/ 里面）；改代码要重打包重装重启，重建数据什么都不用做（mtime 自动重载）。`dataDir` 留空时插件不报错：找不到语料就自动回退随包 `data-sample/`（示例语料），搜索结果里会带一句「这是示例语料 + 怎么接全库」的提示；回退模式下画像/状态写在 `~/.dsh/recipe-homie/`，不碰 node_modules。
 
 ## 已知边界
 

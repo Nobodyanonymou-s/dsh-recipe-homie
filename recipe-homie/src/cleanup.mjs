@@ -6,7 +6,7 @@
  *
  * 原则：只搬不改。搬完原文还在，只是换了字段；搬错了下次重建还能再修。
  */
-import { splitIngredient } from "./parse.mjs";
+import { splitIngredient } from "./parse.ts";
 
 const VERBS = /将|把|放|加|炒|烧|煮|蒸|倒|下锅|切|剁|洗|捞|盛|撒|淋|翻|拌|腌|浸|焖|炖|烤|炸|煎|取出|装盘|上笼|勾芡/;
 const QTY = /[0-9零〇一二三四五六七八九十百两半]+(钱|两|斤|克|只|条|个|根|片|块|朵|棵|张)/;

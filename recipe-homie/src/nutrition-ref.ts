@@ -5,7 +5,7 @@
 //   --calibrate（W7b）：p/f 采用参考值（歧义名/纯糖/无参考条目仍保持现值，见 note）。
 // edible = 可食部%（W7a 回填，参考数据按 foodCode 取）；未给 edible 的条目消费端按 100 处理，
 //   enrich.mjs 营养累计按 grams × edible/100 折算，配料原文克数不动。
-export const REF_OVERRIDES = {
+export const REF_OVERRIDES: Record<string, { v: number[]; ref: string; edible?: number; note: string }> = {
   "白糖": { v: [0, 0, 99], ref: "无参考条目（61 类不含食糖）", note: "纯糖（P1min）：p/f 归零；碳水按 ≈99 缺省" },
   "红糖": { v: [0, 0, 99], ref: "无参考条目（61 类不含食糖）", note: "纯糖（P1min）：p/f 归零；碳水按 ≈99 缺省" },
   "冰糖": { v: [0, 0, 99], ref: "无参考条目（61 类不含食糖）", note: "纯糖（P1min）：p/f 归零；碳水按 ≈99 缺省" },
@@ -289,7 +289,7 @@ export const REF_OVERRIDES = {
   "杨梅": { v: [0.8, 0.2, 6.7], ref: "水果类及其制品-热带亚热带水果 065015 杨梅［树梅，山杨梅］", edible: 82, note: "W7b 校准：p/f 采用参考值" },
   "鳟鱼": { v: [18.6, 2.6, 0.2], ref: "鱼虾蟹贝类-鱼 121130 鳟鱼［红鳟鱼］", edible: 57, note: "W7b 校准：p/f 采用参考值" },
 };
-export const REF_CATEGORIES = {
+export const REF_CATEGORIES: Record<string, { v: number[]; basis: string }> = {
   "猪肉": { v: [17, 20, 0.5], basis: "matched 25/35, median 0.5" },
   "牛肉": { v: [20, 8, 0.3], basis: "matched 4/6, median 0.3" },
   "羊肉": { v: [19, 10, 1.7], basis: "matched 4/9, median 1.7" },
