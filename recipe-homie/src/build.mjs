@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 建库：把 OCR 切片解析成 data/recipes.jsonl + data/index.json。
  * 用法：node src/build.mjs [册名...]   不带参数 = 全部《中国菜谱》分册
  */
@@ -12,7 +12,8 @@ import { LEXICON_STATS } from "./ingredients.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OCR = resolve(ROOT, "..", "OCR处理菜谱", "vibe_coding", "output");
-const DATA = join(ROOT, "data");
+// 允许用 FOODBOT_DATA_DIR 指向别处（与 integrate.mjs 同口径），方便先建到临时目录做 diff 再落盘
+const DATA = process.env.FOODBOT_DATA_DIR ? resolve(process.env.FOODBOT_DATA_DIR) : join(ROOT, "data");
 
 const BOOKS = [
   ["中国菜谱 上海", "上海"],

@@ -31,8 +31,8 @@
       "label": "低盐",
       "goals": { "proteinPerServing": 25, "kcalPerServing": null, "lowFat": false, "lowSalt": true, "lowCarb": false },
       "avoidMethods": ["腌", "腊", "熏", "糟"],
-      "avoidCanon": ["花椒盐", "豆瓣酱", "豆酱", "腐乳", "鱼露", "辣酱油"],
-      "note": "盐目标 ≤3g/人/餐；腌腊类先不放"
+      "reduceCanon": ["花椒盐", "豆瓣酱", "豆酱", "腐乳", "鱼露", "辣酱油"],
+      "note": "盐目标 ≤3g/人/餐；腌腊类先不放，酱类不拦菜、走减量建议"
     },
     "low_fat": {
       "label": "低脂",

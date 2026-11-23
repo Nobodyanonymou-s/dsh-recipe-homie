@@ -25,6 +25,8 @@ export interface PresetDef {
   goals?: PeriodGoals;
   avoidMethods?: string[];
   avoidCanon?: string[];
+  /** R2c：调料级/饮食限制——不拦菜，plan 末尾给「减量建议」（低盐的酱类、腐乳、鱼露等放这里） */
+  reduceCanon?: string[];
   avoidAllergens?: string[];
   blockParents?: string[];
   preferMethods?: string[];
@@ -123,6 +125,8 @@ export interface Constraints {
   blockedAllergens: Set<string>;
   blockedCanon: Set<string>;
   avoidCanon: Set<string>;
+  /** R2c：调料级限制（不拦菜，只出减量建议） */
+  reducedCanon: Set<string>;
   blockedParents: Set<string>;
   bannedMethods: Set<string>;
   preferMethods: Set<string>;
@@ -151,6 +155,7 @@ export function resolveConstraints(profile: Profile, presets: Record<string, Pre
   const blockedAllergens = new Set<string>();
   const blockedCanon = new Set<string>();
   const avoidCanon = new Set<string>();  // 两级忌口（R2b）：主料级换菜，配料级省去（omit）
+  const reducedCanon = new Set<string>(); // R2c：调料级限制，不拦菜，给减量建议
   const bannedMethods = new Set<string>();
   const blockedParents = new Set<string>();
   const preferMethods = new Set<string>();
@@ -209,9 +214,10 @@ export function resolveConstraints(profile: Profile, presets: Record<string, Pre
     if (goals.lowSalt) saltTarget = Math.min(saltTarget ?? Infinity, 3);
     for (const m of preset.avoidMethods ?? []) bannedMethods.add(m);
     for (const m of p.avoidMethods ?? []) bannedMethods.add(m);
-    // 周期层（preset/period）的 avoidCanon 是健康窗口约束（孕期硝水/酒类等），
-    // 保守起见一律硬拦——两级"省去"语义只属于长期层的口味忌口（R2b 裁决 2026-10-28）。
+    // 周期层（preset/period）的 avoidCanon 是健康窗口约束（孕期硝水/酒类等），一律硬拦；
+    // 调料级/饮食限制（R2c：低盐的酱类、腐乳、鱼露…）走 reduceCanon——不拦菜，plan 末尾给减量建议。
     for (const c of preset.avoidCanon ?? []) blockedCanon.add(c);
+    for (const c of preset.reduceCanon ?? []) reducedCanon.add(c);
     for (const c of p.avoidCanon ?? []) blockedCanon.add(c);
     for (const al of preset.avoidAllergens ?? []) blockedAllergens.add(al);
     for (const par of preset.blockParents ?? []) blockedParents.add(par);
@@ -233,6 +239,7 @@ export function resolveConstraints(profile: Profile, presets: Record<string, Pre
     blockedAllergens,
     blockedCanon,
     avoidCanon,
+    reducedCanon,
     blockedParents,
     bannedMethods,
     preferMethods,

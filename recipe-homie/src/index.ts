@@ -26,7 +26,7 @@ import { lookup } from "./ingredients.ts";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 
 /** 宿主边界（只做结构约束，不改行为）：
  *  本插件对宿主只依赖两件事——ctx.effect(fn, label) 与 ctx.tools.register(tool)（返回 disposer），别的都不碰。 */
@@ -140,8 +140,12 @@ function recipeValue(r: any, cons: any = null) {
     chapter: r.chapter ?? "",
     book: r.book,
     page: r.page ?? null,
-    seq: r.seq ?? null,
-    recoveredTitle: r.recoveredTitle ?? null,
+    // 语料形态归一（0.7 语料里的三种老形状，宿主按 output.schema 严格校验，不归一整条就取不出）：
+    //   - 国际册 seq 是数字（1），其余册是「一五」这类字符串；
+    //   - recoveredTitle 是布尔旗标（菜名由目录补全），不是标题字符串；
+    //   - 国际册 notes 是整段字符串，不是数组。
+    seq: r.seq == null ? null : String(r.seq),
+    recoveredTitle: r.recoveredTitle ? true : null,
     minutes: estimateMinutes(r),
     servings: r.servingsBase ?? null,
     protein: r.perServing?.proteinGrams ?? null,
@@ -153,10 +157,12 @@ function recipeValue(r: any, cons: any = null) {
       // 0.1.2 的 render 用 amount、卡片用 amount||qualifier；本库 qualifier 只与 amount 同时出现，合并后两者逐字一致
       amount: i.amount || i.qualifier || "",
       grams: i.grams ?? null,
+      // F1：量缺失要分「原文就没写」(absent) 与「版面/OCR 丢了」(unparsed)——不静默填空
+      amountMissing: i.amountMissing ?? null,
     })),
     steps: (r.steps ?? []).slice(),
     features: r.features ?? "",
-    notes: (r.notes ?? []).slice(),
+    notes: Array.isArray(r.notes) ? r.notes.slice() : (typeof r.notes === "string" && r.notes.trim() ? [r.notes] : []),
     variants: (r.variants ?? []).filter((v: any) => v.verdict === "same_dish").flatMap((v: any) => v.others ?? []),
     skill: r.skill?.tier ?? null,
     blurb: r.blurb ?? "",
@@ -198,7 +204,12 @@ function summaryLine(h: any, i: number): string {
 function recipeTextFromValue(r: any): string {
   const head = `《${r.book}》${r.page ? ` p.${r.page}` : "（整理版无页码）"}${r.seq ? ` · 第${r.seq}条` : ""}${r.recoveredTitle ? "（菜名由目录补全）" : ""}`;
   const ing = r.ingredients
-    .map((x: any) => `- ${x.name}${x.amount ? ` ${x.amount}` : ""}${x.grams && x.amount ? `（≈${x.grams}g）` : ""}`)
+    .map((x: any) => {
+      const miss = !x.amount && x.amountMissing
+        ? (x.amountMissing === "absent" ? "（原文未写量）" : "（原文量未识别）")
+        : "";
+      return `- ${x.name}${x.amount ? ` ${x.amount}` : ""}${x.grams && x.amount ? `（≈${x.grams}g）` : ""}${miss}`;
+    })
     .join("\n");
   const steps = r.steps.map((s: any, i: number) => `${i + 1}. ${s}`).join("\n");
   return [
@@ -441,6 +452,7 @@ export function cardRecipeFromValue(r: any) {
       name: i.name,
       amount: i.amount || "",
       grams: i.grams ?? null,
+      amountMissing: i.amountMissing ?? null,
     })),
     steps: top(r.steps, 20).map((s: any) => clip(s, 220)),
     features: clip(r.features, 160),
@@ -672,7 +684,7 @@ const recipeValueSchema = nullableObject({
   book: { type: "string" },
   page: nullableNumber,
   seq: nullableString,
-  recoveredTitle: nullableString,
+  recoveredTitle: nullable("boolean"),
   minutes: { type: "number" },
   servings: nullableNumber,
   protein: nullableNumber,
@@ -687,8 +699,9 @@ const recipeValueSchema = nullableObject({
         name: nullableString,
         amount: { type: "string" },
         grams: nullableNumber,
+        amountMissing: nullableString,
       },
-      required: ["name", "amount", "grams"],
+      required: ["name", "amount", "grams", "amountMissing"],
       additionalProperties: false,
     },
   },
@@ -884,6 +897,7 @@ function makeContext(config: any) {
   let profile: any = null;
   let state: any = null;
   let profileStamp: string | null = null;
+  let profileMtime: number | null = null;
 
   const getBook = () => {
     if (!book) book = new RecipeBook(dataDir);
@@ -891,8 +905,20 @@ function makeContext(config: any) {
     return book;
   };
   const getPresets = () => (existsSync(presetsFile) ? JSON.parse(readFileSync(presetsFile, "utf8")).presets : {});
+  /**
+   * 画像热插拔：每次读都看一眼 profile.json 的 mtime，变了就整份重载。
+   * 改文件不用重启宿主（和数据文件的 ensureFresh 同一套做法）；读坏了
+   * loadProfile 会退回默认画像，不会让工具挂掉。
+   */
+  const profileMtimeNow = () => {
+    try { return statSync(profileFile).mtimeMs; } catch { return 0; }
+  };
   const getProfile = () => {
-    if (!profile) profile = loadProfile(profileFile);
+    const stamp = profileMtimeNow();
+    if (!profile || stamp !== profileMtime) {
+      profile = loadProfile(profileFile);
+      profileMtime = stamp;
+    }
     return profile;
   };
   const getState = () => {
@@ -910,6 +936,7 @@ function makeContext(config: any) {
   };
   const save = (p: any) => {
     profile = saveProfile(profileFile, p);
+    profileMtime = profileMtimeNow();
     planner = null;
     return profile;
   };
@@ -944,7 +971,7 @@ export function registerTools(ctx: HostContext, config: any = {}) {
       type: "object",
       properties: {
         ingredients: { type: "array", items: { type: "string" }, description: "手头食材，如 [\"五花肉\",\"冬笋\"]；默认全部命中，match=any 则任一命中。" },
-        cuisine: { type: "string", description: "分册，如 上海、广东、四川。" },
+        cuisine: { type: "string", description: "分册：上海、北京、江苏、浙江、广东、安徽、山东、湖北、湖南、陕西，以及 南北、大众、国际（没有四川等分册）。" },
         chapter: { type: "string", description: "书的分类：肉菜类、水产菜类、禽蛋菜类、野味菜类、甜菜类、素菜类、其他菜类。" },
         method: { type: "string", description: "技法，如 蒸、烧、炒、炸、炖、焖、爆。" },
         flavor: { type: "string", description: "口味，如 咸鲜、糖醋、麻辣、香酥、酸甜。" },
@@ -1059,12 +1086,21 @@ export function registerTools(ctx: HostContext, config: any = {}) {
       // 分支 2/3：零命中。有锚点 → no_hit；连锚点都没有 → no_anchor。近邻只为 no_hit 找。
       if (!filtered.length) {
         // 覆盖范围（0.4.1 裁决 9，E2 O9）：「南北」是书名不是省名，单列出来；
-        // 并把「为什么没有佛跳墙」说破——不是检索不好，是没有闽菜分册
+        // 大众/国际是现代菜谱批次，不算省分册——清单必须从数据来，不能按文档想象（v1 评测 F3：
+        // 描述里写着「四川」，而库里根本没有四川分册）。并说破「为什么没有佛跳墙」：不是检索不好，
+        // 是这套书没有福建/四川分册。
         const facets = book.facetsOf();
-        const provinces = facets.cuisines.filter((x: any) => x !== "南北");
-        const coverage = `《中国菜谱》${provinces.length} 个省分册（${provinces.join("、")}）+《中国南北名菜谱》，暂无闽菜等分册，所以没有佛跳墙这类菜${
+        const PROVINCES = ["上海", "北京", "江苏", "浙江", "广东", "安徽", "山东", "湖北", "湖南", "陕西"];
+        const provinces = facets.cuisines.filter((x: any) => PROVINCES.includes(x));
+        const others = facets.cuisines.filter((x: any) => !PROVINCES.includes(x) && x !== "南北");
+        const coverage = `《中国菜谱》${provinces.length} 个省分册（${provinces.join("、")}）+《中国南北名菜谱》${
+          others.length ? `+《${others.join("》《")}》` : ""
+        }，暂无四川、闽菜等分册，所以没有佛跳墙这类川闽菜${
           c.sampleMode ? "。⚠️ 当前跑在随包示例语料上（不是全库）——在 profile 的 cordis.patch.yml 给 recipe-homie 条目配 dataDir 指向完整语料目录，重启即可查全" : ""
         }`;
+        const missingVolume = query.cuisine && !facets.cuisines.includes(String(query.cuisine))
+          ? `库里没有「${String(query.cuisine)}」分册。`
+          : "";
         const analysis = args.q ? book.analyzeQuery(String(args.q)) : { ingredients: [], methods: [], literal: false };
         const anchor = analysis.methods[0] ?? analysis.ingredients[0] ?? (analysis.literal && args.q ? String(args.q) : null);
         const neighbors = anchor && args.q
@@ -1077,7 +1113,7 @@ export function registerTools(ctx: HostContext, config: any = {}) {
             neighbors: [],
             hint: {
               code: "no_anchor",
-              text: `咱们书架上还没有这道菜，也找不到能搭上边的同类。覆盖范围：${coverage}。想要类似的可以试试技法词（清汤/蒸/煨/坛），或者告诉我你今天想吃个什么路子，我来想办法。`,
+              text: `${missingVolume}咱们书架上还没有这道菜，也找不到能搭上边的同类。覆盖范围：${coverage}。想要类似的可以试试技法词（清汤/蒸/煨/坛），或者告诉我你今天想吃个什么路子，我来想办法。`,
             },
           };
         }
@@ -1089,7 +1125,7 @@ export function registerTools(ctx: HostContext, config: any = {}) {
           neighbors,
           hint: {
             code: "no_hit",
-            text: `没有这道菜${found}。不急——换个叫法、或把部位词去掉再试试。覆盖范围：${coverage}。`,
+            text: `${missingVolume}没有这道菜${found}。不急——换个叫法、或把部位词去掉再试试。覆盖范围：${coverage}。`,
           },
         };
       }

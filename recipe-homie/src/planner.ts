@@ -194,6 +194,40 @@ const EXOTIC = new Set(["狗肉", "蛇", "果子狸", "穿山甲", "鹿", "狍�
 // 贵价干货：一周家常菜单里不放（想放开就把 kitchen.excludeLuxury 设成 false）
 const LUXURY = new Set(["鱼翅", "鱼肚", "鱼唇", "明骨", "燕窝", "海参", "猴头", "鲍鱼", "鹿筋", "蛤士蟆", "熊掌", "鱼皮", "干贝"]);
 
+// ───────── R2c 调料级减量：低盐这类「烹饪可调」的限制不拦菜 ─────────
+// 菜谱是固定的，锅铲是灵活的：盐目标靠「减量」实现，不靠换菜/省料。
+// 命中时按菜单里实际调料克数生成一句建议；克数全部来自用料表，不另编数。
+const SALT_EQ: Record<string, number> = { 盐: 1, 酱油: 0.15, 豆瓣酱: 0.15, 豆酱: 0.15, 蚝油: 0.12, 腐乳: 0.12, 鱼露: 0.25, 辣酱油: 0.15 };
+const saltEqOf = (i: any) => {
+  const f = SALT_EQ[i.canon];
+  return f && i.grams > 0 ? i.grams * f : 0;
+};
+
+function reductionAdvice(plan: any[], cons: any): string | null {
+  const reduced: Set<string> = cons?.reducedCanon instanceof Set ? cons.reducedCanon : new Set();
+  if (!cons?.saltTarget && !reduced.size) return null;
+  const dishes = plan.flatMap((d) => (d.meals ?? []).flatMap((m: any) => m.dishes ?? []));
+  const rows = dishes
+    .map((x: any) => {
+      const per = Math.max(1, x.r.servingsBase || 4);
+      const ings = (x.r.ingredients ?? []).filter((i: any) => saltEqOf(i) > 0 || reduced.has(i.canon));
+      const eq = ings.reduce((s: number, i: any) => s + saltEqOf(i), 0) / per;
+      const ingsSorted = [...ings].sort((a: any, b: any) => saltEqOf(b) - saltEqOf(a));
+      return { title: x.r.title, ings: ingsSorted, eq };
+    })
+    .filter((r: any) => r.ings.length)
+    .sort((a: any, b: any) => b.eq - a.eq);
+  if (!rows.length) return null;
+  const desc = rows.slice(0, 2).map((r: any) => `${r.title}（${r.ings
+    .slice(0, 3)
+    .map((i: any) => `${i.canon} ${Math.round(i.grams)}g`).join(" + ")}${r.eq > 0 ? `，约 ${Math.round(r.eq * 10) / 10}g 盐/人` : ""}）`).join("、");
+  const over = cons?.saltTarget ? rows.filter((r: any) => r.eq > cons.saltTarget).length : 0;
+  const head = cons?.saltTarget
+    ? (over ? `${over} 道菜的盐当量高于 ${cons.saltTarget}g/人` : `盐目标 ${cons.saltTarget}g/人`)
+    : "调料减量";
+  return `低盐建议（${head}）：${desc}——酱油/盐减半或换低钠版，起锅前尝味再补${reduced.size ? "；酱类不拦菜，做的时候减量就够" : ""}。`;
+}
+
 export class Planner {
   book: any;
   profile: any;
@@ -574,6 +608,9 @@ export class Planner {
       const more = shopping.aligned.length > 6 ? ` 等 ${shopping.aligned.length} 项` : "";
       notes.push(`已凑整到可买份量：${head}${more}——清单上是买得到的量，多的留着下次用。`);
     }
+    // R2c：调料级/饮食限制（低盐等）不拦菜、不换菜——按菜单里实际调料克数给一句减量建议
+    const reduction = reductionAdvice(plan, this.c);
+    if (reduction) notes.push(reduction);
 
     return {
       seed,

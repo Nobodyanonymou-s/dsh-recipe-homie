@@ -22,7 +22,7 @@ import { registerTools } from "../src/index.ts";
 import { RecipeBook } from "../src/query.ts";
 import { DEFAULT_PROFILE } from "../src/profile.ts";
 import { DEFAULT_STATE } from "../src/state.ts";
-import { writeFileSync, existsSync, mkdirSync, rmSync, linkSync, copyFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, linkSync, copyFileSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -852,6 +852,52 @@ async function runAll() {
     checkEntry(t, emp);
     t.check("empty 分支：candidates 为空且 hint.code === 'empty'", emp.value?.candidates?.length === 0 && emp.value?.hint?.code === "empty", safeJson({ n: emp.value?.candidates?.length, code: emp.value?.hint?.code }));
     t.check("empty 分支：presentationMeta === null（不发空卡）", emp.meta === null, `实际 ${safeJson(emp.meta)}`);
+  });
+
+  await runCase(15, "画像热插拔：直接改 profile.json，下一次调用即生效（不用重启宿主）", async (t) => {
+    const reg = getEasy();
+    const file = reg.profileFile;
+    const start = JSON.parse(readFileSync(file, "utf8"));
+    const read = async (label) => (await exec(reg, "profile_show", {}, label)).text;
+    const before = await read("profile_show(改前)");
+    // 换成一份完全不同的画像：4 人、只喜欢辣椒
+    const next = {
+      ...start,
+      household: { size: 4, adults: 3, children: 1 },
+      longTerm: { ...(start.longTerm ?? {}), likes: [{ target: "辣椒", weight: 2 }], dislikes: [] },
+    };
+    await new Promise((resolve) => setTimeout(resolve, 12)); // 同一毫秒内写入 mtime 不变，等一拍
+    writeFileSync(file, JSON.stringify(next, null, 2), "utf8");
+    const after = await read("profile_show(改后)");
+    t.check("改文件后立即生效：人数 4", after.includes("家庭：4 人"), after.split("\n")[0]);
+    t.check("改文件后立即生效：喜欢里出现「辣椒」", after.includes("喜欢 辣椒"), after.split("\n")[1]);
+    // 热插拔还要带动 planner：换画像后 recommend 用新画像重建
+    const rec = await exec(reg, "recommend", { scene: "daily", people: 4 }, "recommend(改后)");
+    t.check("换画像后 planner 仍可正常出候选", !rec.error && (rec.value?.candidates?.length ?? 0) > 0, rec.error ?? `候选 ${rec.value?.candidates?.length}`);
+    // 改回原样，保持用例间无副作用
+    await new Promise((resolve) => setTimeout(resolve, 12));
+    writeFileSync(file, JSON.stringify(start, null, 2), "utf8");
+    const back = await read("profile_show(改回)");
+    t.check("改回去也立即生效（与改前逐字一致）", back === before, `改前首行「${before.split("\n")[0]}」改后首行「${back.split("\n")[0]}」`);
+  });
+
+  await runCase(16, "取值层归一：国际册（seq 数字 / notes 字符串）与上海册（recoveredTitle 布尔）都能过 output.schema", async (t) => {
+    const a = await exec(getEasy(), "recipe_get", { id: "国际-001" }, "get(国际-001)");
+    checkEntry(t, a);
+    if (!a.error) {
+      t.check("国际-001：seq 归一成字符串", typeof a.value?.recipe?.seq === "string", describeValue(a.value?.recipe?.seq));
+      t.check("国际-001：notes 归一成数组", Array.isArray(a.value?.recipe?.notes), describeValue(a.value?.recipe?.notes));
+    }
+    const b = await exec(getEasy(), "recipe_get", { id: "上海-046" }, "get(上海-046)");
+    checkEntry(t, b);
+    if (!b.error) {
+      t.check("上海-046：recoveredTitle 归一成布尔 true", b.value?.recipe?.recoveredTitle === true, describeValue(b.value?.recipe?.recoveredTitle));
+      t.check("上海-046：render 带「菜名由目录补全」", b.text.includes("菜名由目录补全"), b.text.slice(0, 120));
+    }
+    // show_card 的 dishes 复用同一份 recipeValue，一起验
+    const c = await exec(getEasy(), "show_card", { title: "归一回归", dishes: ["国际-001", "上海-046"] }, "show_card(归一)");
+    checkEntry(t, c);
+    t.check("show_card 也能装下这两道", !c.error && c.value?.dishes?.length === 2, c.error ?? describeValue(c.value?.dishes?.length));
   });
 }
 

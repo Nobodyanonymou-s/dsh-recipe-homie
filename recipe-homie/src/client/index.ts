@@ -167,12 +167,15 @@ function Chip({ text, warn }: { text: any; warn?: any }) {
 
 function Ingredients({ items, t }: { items: any; t: Strings }) {
   if (!Array.isArray(items) || items.length === 0) return null;
+  // F1：原文没写量 / 版面把量丢了，卡片上如实说「原文未标」，不显示成空白
+  const amountOf = (i: any) => i.amount
+    || (i.amountMissing === "absent" ? "原文未写量" : i.amountMissing === "unparsed" ? "原文量未识别" : "");
   return h("section", { style: C.section },
     h("div", { style: C.label }, t.ingredients),
     h("div", { style: C.grid },
       items.map((i: any, n: number) => h("div", { key: n, style: C.ing },
         h("span", null, i.name),
-        h("span", { style: C.grams }, [i.amount, i.grams ? `${i.grams}g` : ""].filter(Boolean).join(" · "))))));
+        h("span", { style: C.grams }, [amountOf(i), i.grams ? `${i.grams}g` : ""].filter(Boolean).join(" · "))))));
 }
 
 function Steps({ items, t }: { items: any; t: Strings }) {

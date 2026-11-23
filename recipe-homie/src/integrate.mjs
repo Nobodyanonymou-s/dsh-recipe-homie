@@ -43,9 +43,15 @@ const report = { at: new Date().toISOString(), base: base.length, nanbei: nanbei
 
 // ---- 1. 词表补全 ----
 const addByRaw = new Map();
+const squashKey = (s) => String(s ?? "").replace(/\s+/g, "");
 for (const a of additions) {
   if (!a?.raw || !a?.canon) continue;
-  addByRaw.set(a.raw.replace(/\s+/g, ""), a);
+  // 词表补全的 raw 是当年解析出的「脏名」（含 ………/● 这类 OCR 噪声，如
+  // 「黄钻鱼●（或青鱼）…………一尾（约重一斤半）」）。解析层把点线切开后 ing.name 是干净名，
+  // 所以两边都用 splitIngredient 归一一次：原串照留，干净名也进索引，老补全不失效。
+  addByRaw.set(squashKey(a.raw), a);
+  const clean = splitIngredient(String(a.raw));
+  if (clean.name) addByRaw.set(squashKey(clean.name), a);
 }
 const canonTarget = (a) => ({ canon: a.canon, parent: a.parent ?? "其他", cat: a.cat ?? "其他", allergen: a.allergen ?? [] });
 
@@ -532,7 +538,92 @@ for (const r of guoji) {
 }
 report.guoji = gjStats;
 
+// ---- 3d. 配料行清洗（数据层闸门，2026-11-23 评测 F1/F2）----
+// 三个来源都有版面型脏行：OCR 把点线当原料名（北京-079「番茄酱……………………」）、整页目录
+// 被当正文收进用料表（国际-1134 混进 636 条目录）、做法句子跑进用料表（国际-119「1. 将黄油…」），
+// 以及纯标点/HTML/英文残行。处置原则同 cleanup.mjs：能搬就搬（步骤行原文不丢），
+// 只有目录/残片才丢，且丢弃/搬迁计数与样例写进 processed-report.json——不做静默改数据（红线 5）。
+const CLEAN = { catalog: 0, noise: 0, steps: 0, amountRecovered: 0, amountQualifier: 0, missingUnparsed: 0, missingAbsent: 0, samples: [] };
+const QTY_HINT = /[0-9零〇一二三四五六七八九十百两半]\s*(?:千克|公斤|斤|两|钱|分|克|个|只|条|根|棵|头|粒|片|张|瓣|块|段|把|杯|汤匙|茶匙|小匙|勺)|适量|少许|各/;
+const STEP_VERB = /^(?:将|把|用|放|加|炒|烧|煮|蒸|倒|下|切|剁|洗|捞|盛|撒|淋|翻|拌|腌|浸|焖|炖|烤|炸|煎|取|装|上笼|勾芡|净|刮|削|片|划)/;
+const isPunctOnly = (s) => /^[…‥.．·・•∙「」『』()（）\s\-—_~～|/\\]+$/.test(s);
+const isHtmlTag = (s) => /^<\/?[a-z][^>]*>$/i.test(String(s).trim());
+const isLatinOnly = (s) => !/[一-鿿]/.test(s) && /[A-Za-z]/.test(s);
+const looksLikeStepLine = (s) => /[。；]/.test(s) || (STEP_VERB.test(s) && s.length >= 12) || (s.length >= 24 && /[，、]/.test(s));
+const cleanSample = (kind, rec, text) => {
+  if (CLEAN.samples.length < 20) CLEAN.samples.push(`${kind} ${rec.id}: ${String(text).replace(/\s+/g, "").slice(0, 40)}`);
+};
+const pushStep = (rec, text) => {
+  const m = String(text).match(/^(\d{1,2})\s*[.、．]\s*(.+)$/);
+  const body = m ? m[2].trim() : String(text).trim();
+  if (!body) return false;
+  const norm = body.replace(/\s+/g, "");
+  const steps = (rec.steps ??= []);
+  if (steps.some((s) => String(s).replace(/\s+/g, "").includes(norm))) return false;
+  const line = m ? `${m[1]}. ${body}` : body;
+  // 带序号的按序号插回原位（广东-093 缺第 4 步，别把 4 接到 6 后面）
+  if (m) {
+    const n = Number(m[1]);
+    const at = steps.findIndex((s) => {
+      const mm = String(s).match(/^(\d{1,2})\s*[.、．]/);
+      return mm && Number(mm[1]) > n;
+    });
+    if (at >= 0) steps.splice(at, 0, line);
+    else steps.push(line);
+  } else steps.push(line);
+  return true;
+};
+
+function cleanIngredientRows(rec) {
+  const kept = [];
+  for (const src of rec.ingredients ?? []) {
+    const ing = { ...src };
+    const origName = String(ing.name ?? "").trim();
+    const origRaw = String(ing.raw ?? "").trim();
+    // 1) 编号行：目录（带页码/点线/英文残尾）丢掉；其余编号行都是做法句，搬去 steps（原文不丢）
+    if (/^\d{1,4}\s*[.、．]/.test(origName)) {
+      const catalogish = /[（(]\s*\d{1,4}\s*[)）]\s*$/.test(origName) || /[（(]\s*\d{1,4}\s*[)）]\s*$/.test(origRaw)
+        || /[…‥]{2,}|\.{3,}/.test(origName) || isLatinOnly(origName);
+      if (catalogish) { CLEAN.catalog++; cleanSample("目录行", rec, origName); continue; }
+      if (pushStep(rec, origName)) CLEAN.steps++; else cleanSample("编号残行", rec, origName);
+      continue;
+    }
+    // 2) 纯标点 / HTML 残片 / 英文残行
+    if (!origName || isPunctOnly(origName) || isHtmlTag(origName) || isHtmlTag(origRaw)) { CLEAN.noise++; cleanSample("残片", rec, origName || origRaw); continue; }
+    if (isLatinOnly(origName)) { CLEAN.noise++; cleanSample("英文残行", rec, origName); continue; }
+    // 3) 量缺失但从 raw 还切得出（大众册整册没有 amount 字段，raw 是「名·量」）；
+    //    顺手把 OCR 点线（…………）切开的干净名取回来
+    let name = origName;
+    if (!ing.amount) {
+      const sp = splitIngredient(String(ing.raw ?? name));
+      if (sp.amount) { ing.amount = sp.amount; CLEAN.amountRecovered++; }
+      if (sp.name && sp.name !== name && !/[。；]/.test(name)) name = sp.name;
+    }
+    // 4) 做法句子跑进用料表：搬去 steps（内容不丢）
+    if (!ing.amount && looksLikeStepLine(name) && !QTY_HINT.test(String(ing.raw ?? ""))) {
+      if (pushStep(rec, name)) CLEAN.steps++; else cleanSample("步骤重复", rec, name);
+      continue;
+    }
+    ing.name = name;
+    if (!ing.amount) {
+      if (ing.qualifier) { ing.amount = String(ing.qualifier); CLEAN.amountQualifier++; }
+      else {
+        const raw = String(ing.raw ?? "").replace(/\s+/g, "");
+        const sepAt = raw.search(/[·.．…‥]{2,}/);
+        // 分隔符后面空着 = 版面把量丢了（OCR 丢列）；原文有量词但没解析出来 = unparsed；
+        // 原文本来就没写量（「猪腰」「净塘里鱼片」）= absent。两者分开，原文才谈得上可追溯。
+        if (sepAt >= 0 || QTY_HINT.test(raw)) { ing.amountMissing = "unparsed"; CLEAN.missingUnparsed++; }
+        else { ing.amountMissing = "absent"; CLEAN.missingAbsent++; }
+      }
+    }
+    kept.push(ing);
+  }
+  rec.ingredients = kept;
+}
+
 const pooled = [...withNew, ...dazhongRecords, ...guojiRecords];
+for (const rec of pooled) cleanIngredientRows(rec);
+report.cleanup = CLEAN;
 
 // 2c. grams 修复：按 原料名 定位（用重定位后的 targetId）。
 // W2 P3 起挪到 withNew 之后——南北册的行（外层小数「2.5斤」4 行）也能走同一证据门。

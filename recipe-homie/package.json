@@ -1,6 +1,6 @@
 {
   "name": "dsh-recipe-homie",
-  "version": "0.7.0",
+  "version": "0.7.3",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -40,7 +40,7 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
-    "check": "pnpm typecheck && pnpm build && pnpm smoke && pnpm test:contract",
+    "check": "pnpm typecheck && pnpm build && pnpm smoke && pnpm test:contract && pnpm test:eval",
     "prepare": "tsdown",
     "prepack": "tsdown",
     "data:build": "node src/build.mjs",
@@ -49,6 +49,7 @@
     "smoke": "node tools/smoke.mjs",
     "test:client": "node tools/test-client.mjs",
     "test:contract": "node tools/contract-test.mjs",
+    "test:eval": "node tools/eval-three-layer.mjs",
     "test:amounts": "node tools/amounts-test.mjs",
     "test:acceptance": "node tools/acceptance.mjs",
     "nutrition": "node tools/nutrition-check.mjs",
